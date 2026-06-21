@@ -1,0 +1,21 @@
+# Gradle
+.gradle/
+.kotlin/
+/build/
+**/build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Local config (never commit)
+local.properties
+
+# IDE
+.idea/
+*.iml
+*.iws
+*.ipr
+.DS_Store
+
+# Android
+/captures/
+.externalNativeBuild/
+.cxx/
