@@ -44,29 +44,45 @@ Connect). Android SDK at `~/Android/Sdk` (`local.properties` sets `sdk.dir`). No
 - `.gitignore` excludes `build/`, `.gradle/`, `.kotlin/`, `local.properties` — never commit build
   artifacts; check `git status` before `git add`.
 
-## Emulator (lessons learned — this took fighting to get right)
-Environment has a working headless emulator. AVDs: **`Phone_API34`** (use this for the app) and
-`Wear_OS_Watch`. KVM at `/dev/kvm`, system image `android-34`. Use the SDK adb:
-`~/Android/Sdk/platform-tools/adb`.
+## Emulator (VERIFIED working — this took real fighting; read before touching it)
+KVM at `/dev/kvm`, only phone system image is `system-images;android-34;google_apis_playstore;x86_64`.
+Use the SDK adb: `~/Android/Sdk/platform-tools/adb`.
 
-**Launch headless (one instance per AVD only):**
+**Use the dedicated AVD `tdee_phone`** (created for this project; boots authorized in ~24s, confirmed
+with a screenshot). Do NOT use `Phone_API34` — it's a Play Store image whose existing userdata never
+trusted our adb key (stuck `unauthorized` headlessly), and I accidentally damaged it (see footguns).
+If `tdee_phone` is ever gone, recreate it:
+```
+export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java)))) ANDROID_SDK_ROOT=$HOME/Android/Sdk
+echo no | ~/Android/Sdk/cmdline-tools/latest/bin/avdmanager create avd \
+  -n tdee_phone -k "system-images;android-34;google_apis_playstore;x86_64" --device pixel_6 --force
+```
+
+**Launch headless:**
 ```
 export ANDROID_SDK_ROOT=$HOME/Android/Sdk ANDROID_HOME=$HOME/Android/Sdk
-~/Android/Sdk/emulator/emulator -avd Phone_API34 \
-  -no-window -no-audio -no-boot-anim -no-metrics -gpu swiftshader_indirect -no-snapshot &
+~/Android/Sdk/platform-tools/adb start-server          # BEFORE launch, never restart mid-boot
+nohup ~/Android/Sdk/emulator/emulator -avd tdee_phone \
+  -no-window -no-audio -no-boot-anim -no-metrics -gpu swiftshader_indirect -no-snapshot \
+  >/tmp/emulator.log 2>&1 &
 ```
-Logs → wherever you redirect (e.g. `/tmp/emulator.log`). Wait for readiness by polling BOTH
-`adb devices` showing `emulator-5554  device` (authorized) AND
-`adb shell getprop sys.boot_completed` == `1`. Cold boot is ~1–2 min.
+Wait for readiness by polling BOTH `adb devices` == `emulator-5554  device` (authorized) AND
+`adb shell getprop sys.boot_completed` == `1`. Do this in a **background** Bash `until`-loop (foreground
+`sleep` is blocked); have it also report process death + timeout, not just success.
 
-**Auth gotcha (the big one):** headless = no "Allow USB debugging" dialog to tap.
-- **Do NOT `adb kill-server`/restart the adb server while the emulator is booting** — it leaves the
-  device stuck `unauthorized`. Start the adb server first, then launch the emulator, then just wait.
-- If a device is stuck `unauthorized` with no dialog, the reliable fix is a **wiped cold boot**
-  (`-wipe-data`): on fresh userdata the emulator injects `~/.android/adbkey.pub` into the guest trust
-  store and auto-authorizes. (`Phone_API34` is a throwaway test device — wiping is safe.)
-- Only one instance per AVD (else lock conflict). Kill cleanly:
-  `pkill -9 -f "qemu-system.*Phone_API34"`.
+**Why a fresh AVD is the fix for headless auth:** there's no "Allow USB debugging" dialog to tap.
+On a brand-new AVD the emulator injects `~/.android/adbkey.pub` into the guest at the image level
+before boot, so it comes up already `device` (authorized) — even for a Play Store image. An *existing*
+unauthorized AVD can't be fixed headlessly (Play Store images can't be rooted to write `adb_keys`).
+
+**Footguns that cost me an hour (do not repeat):**
+- **`pkill -f "qemu-system"` kills your own shell** — the script text contains that string, so `-f`
+  matches the running bash. Use name-match `pgrep qemu` / `pkill qemu` (no `-f`), or kill by pid.
+- **Never `adb kill-server` while an emulator is booting** — leaves it stuck `unauthorized`.
+- **Never `rm -rf` an AVD's `modem_simulator/` dir** — the emulator then hangs at modem init (qemu
+  stays alive, but Android never finishes booting, so adb never sees the device). This is how I broke
+  `Phone_API34`.
+- One instance per AVD (else lock conflict).
 
 **Drive it (mirrors `~/AudiobookWearOS/EmulatorReadme.md`):**
 ```
