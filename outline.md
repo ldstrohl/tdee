@@ -27,6 +27,25 @@ NL food log -> macros -> weight sync -> empirical TDEE -> weekly target adjustme
 
 ---
 
+## Canonical Units
+The internal system is fixed and **dimensionally consistent** — all engine math and storage use it,
+conversions happen only at the human-display edge:
+
+| Dimension | Canonical unit | Notes |
+|---|---|---|
+| Mass | **kg** | Native to Health Connect; display converts to **lb**. |
+| Energy | **kcal** | Native to every energy source (USDA, food labels, Mifflin–St Jeor) and the user. `energy_density` carries `kcal/kg` (default 7700). |
+| Length | **cm** | As Mifflin–St Jeor expects; height input. |
+| Time | **`java.time`** (`Instant`/`LocalDate`) | Windows expressed in days. |
+
+We deliberately **do not** convert energy to joules: kcal is the lingua franca of all energy I/O,
+so joules would *add* conversion boundaries (USDA, formula, constant, UI) rather than remove them.
+Correctness comes from dimensional consistency (which holds) and from unit-suffixed field names
+(`value_kcal`, `*_g`, `*_kg`) — not from re-denominating to SI. Display-layer conversion (kg→lb,
+and kcal→kJ if ever needed) is the only place units change.
+
+---
+
 ## Design Principles (Seams, not features)
 These keep the MVP small while avoiding one-way doors. Each is a thin seam today, not a built-out
 system:

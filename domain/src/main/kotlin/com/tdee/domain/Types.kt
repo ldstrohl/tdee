@@ -3,6 +3,14 @@ package com.tdee.domain
 import java.time.Instant
 import java.time.LocalDate
 
+/*
+ * Canonical units for this module (dimensionally consistent; conversions live only at the UI edge):
+ *   mass = kg, energy = kcal, length = cm, time = java.time (windows in days).
+ * Energy is kept in kcal (not joules) because every energy source — USDA, Mifflin–St Jeor,
+ * the energy-density constant, the user — speaks kcal; joules would only add boundaries.
+ * Field names carry their unit (e.g. valueKcal, *Kg, *G) to keep this unambiguous in code.
+ */
+
 /** Biological sex, used by the Mifflin–St Jeor RMR formula. */
 enum class Sex { MALE, FEMALE }
 
