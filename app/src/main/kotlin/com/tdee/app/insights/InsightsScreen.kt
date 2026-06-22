@@ -28,9 +28,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.TextMeasurer
@@ -42,6 +44,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tdee.app.BuildConfig
+import com.tdee.app.data.DayExpenditurePoint
+import com.tdee.app.data.MacroSummary
 import com.tdee.app.ui.theme.ChartColors
 import com.tdee.app.ui.theme.LocalChartColors
 import java.time.LocalDate
@@ -82,6 +86,20 @@ fun InsightsScreen(
             state = state,
             onRangeSelected = { viewModel.setRange(it) },
             onPredictionToggle = { viewModel.setPrediction(!state.predictionOn) },
+        )
+
+        // Expenditure chart section (independent range)
+        ExpenditureChartSection(
+            points = state.visibleExpenditurePoints,
+            selectedRange = state.expenditureRange,
+            onRangeSelected = { viewModel.setExpenditureRange(it) },
+        )
+
+        // Macro donut section (independent window)
+        MacroDonutSection(
+            summary = state.macroSummary,
+            selectedWindow = state.macroWindow,
+            onWindowSelected = { viewModel.setMacroWindow(it) },
         )
 
         // Debug-only seed button
@@ -185,6 +203,215 @@ private fun TrendChartSection(
                         textMeasurer = textMeasurer,
                     )
                 }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Expenditure chart section
+// ---------------------------------------------------------------------------
+
+@Composable
+private fun ExpenditureChartSection(
+    points: List<DayExpenditurePoint>,
+    selectedRange: ExpenditureRange,
+    onRangeSelected: (ExpenditureRange) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Expenditure", style = MaterialTheme.typography.titleMedium)
+
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            ExpenditureRange.values().forEach { range ->
+                Pill(
+                    label = range.label,
+                    active = range == selectedRange,
+                    onClick = { onRangeSelected(range) },
+                )
+            }
+        }
+
+        when {
+            points.isEmpty() -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(220.dp)
+                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "Log food to see expenditure",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(16.dp),
+                    )
+                }
+            }
+            else -> {
+                val chartColors = LocalChartColors.current
+                val textMeasurer = rememberTextMeasurer()
+                Canvas(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(880f / 340f),
+                ) {
+                    drawExpenditureChart(
+                        points = points,
+                        colors = chartColors,
+                        textMeasurer = textMeasurer,
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Macro donut section
+// ---------------------------------------------------------------------------
+
+@Composable
+private fun MacroDonutSection(
+    summary: MacroSummary?,
+    selectedWindow: MacroWindow,
+    onWindowSelected: (MacroWindow) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Macros", style = MaterialTheme.typography.titleMedium)
+
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            MacroWindow.values().forEach { window ->
+                Pill(
+                    label = window.label,
+                    active = window == selectedWindow,
+                    onClick = { onWindowSelected(window) },
+                )
+            }
+        }
+
+        if (summary == null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(200.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "Log food to see macro breakdown",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
+            }
+        } else {
+            val chartColors = LocalChartColors.current
+            val textMeasurer = rememberTextMeasurer()
+
+            // Caption: "Today" for TODAY window; "avg/day · N of M days logged" otherwise
+            val caption = if (selectedWindow == MacroWindow.TODAY) {
+                "Today"
+            } else {
+                "avg/day · ${summary.completeDays} of ${summary.totalDays} days logged"
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(24.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                // Donut canvas — square, ~200dp
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Canvas(
+                        modifier = Modifier
+                            .height(200.dp)
+                            .aspectRatio(1f),
+                    ) {
+                        drawDonut(
+                            summary = summary,
+                            isToday = selectedWindow == MacroWindow.TODAY,
+                            colors = chartColors,
+                            textMeasurer = textMeasurer,
+                        )
+                    }
+                    Text(
+                        text = caption,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                // Macro bars
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    MacroBar(
+                        label = "Protein",
+                        consumed = summary.proteinG,
+                        target = summary.targets.proteinG,
+                        color = chartColors.proteinColor,
+                    )
+                    MacroBar(
+                        label = "Fat",
+                        consumed = summary.fatG,
+                        target = summary.targets.fatG,
+                        color = chartColors.fatColor,
+                    )
+                    MacroBar(
+                        label = "Carbs",
+                        consumed = summary.carbG,
+                        target = summary.targets.carbG,
+                        color = chartColors.carbColor,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MacroBar(label: String, consumed: Double, target: Double, color: Color) {
+    val fraction = if (target > 0) (consumed / target).coerceIn(0.0, 1.0).toFloat() else 0f
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(label, style = MaterialTheme.typography.labelSmall)
+            Text(
+                "${consumed.toInt()} / ${target.toInt()} g",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(9.dp),
+        ) {
+            // Track
+            drawRoundRect(
+                color = color.copy(alpha = 0.18f),
+                size = size,
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(6f),
+            )
+            // Fill
+            if (fraction > 0f) {
+                drawRoundRect(
+                    color = color,
+                    size = Size(size.width * fraction, size.height),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(6f),
+                )
             }
         }
     }
@@ -419,4 +646,207 @@ private fun DrawScope.drawTrendChart(
             }
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Canvas drawing — matches expend_chart() geometry from design/charts_gen.py
+// ---------------------------------------------------------------------------
+
+/**
+ * Draws the expenditure chart on the current Canvas.
+ *
+ * Geometry mirrors expend_chart() in design/charts_gen.py:
+ *   - Same 880×340 viewBox margins as the trend chart (ml=58, mr=18, mt=22, mb=40)
+ *   - Intake bars (intakeBar color; skip days with null intakeKcal)
+ *   - Deficit-only green shading between bar-top and TDEE line when intake < TDEE
+ *   - TDEE polyline (tdeeLine color, stroke-width 3 scaled)
+ *   - ~6 y-gridlines + ~6 date ticks
+ */
+private fun DrawScope.drawExpenditureChart(
+    points: List<DayExpenditurePoint>,
+    colors: ChartColors,
+    textMeasurer: TextMeasurer,
+) {
+    val w = size.width
+    val h = size.height
+
+    // Same margins as trend chart (fractions of 880×340 reference)
+    val ml = w * (58f / 880f)
+    val mr = w * (18f / 880f)
+    val mt = h * (22f / 340f)
+    val mb = h * (40f / 340f)
+    val pw = w - ml - mr
+    val ph = h - mt - mb
+    val scale = w / 880f
+
+    // X domain: index-based (one slot per point)
+    val n = points.size
+    val tMin = points.first().date
+    val tMax = points.last().date
+    val totalDays = ChronoUnit.DAYS.between(tMin, tMax).toFloat().coerceAtLeast(1f)
+
+    fun xOf(date: LocalDate): Float {
+        val offset = ChronoUnit.DAYS.between(tMin, date).toFloat()
+        return ml + pw * (offset / totalDays)
+    }
+
+    // Y domain — include all intakeKcal (non-null) and all tdeeKcal values, ±150 padding
+    val intakeValues = points.mapNotNull { it.intakeKcal }
+    val tdeeValues = points.map { it.tdeeKcal }
+    val allVals = intakeValues + tdeeValues
+    val vMin = ((allVals.minOrNull() ?: 1500.0) - 150.0)
+    val vMax = ((allVals.maxOrNull() ?: 3000.0) + 150.0)
+    val vRange = (vMax - vMin).toFloat().coerceAtLeast(1f)
+
+    fun yOf(v: Double): Float = mt + ph * (1f - ((v - vMin) / vRange).toFloat())
+
+    val base = mt + ph  // y coordinate of the bottom of the chart area
+
+    // Bar half-width: scaled to match design (0.7 × plot-width / n, min 1.5)
+    val bw = (pw / n.toFloat() * 0.7f).coerceAtLeast(1.5f * scale)
+
+    // ---- 6 Gridlines + y-axis labels ----
+    val axisStyle = TextStyle(fontSize = 11.sp, color = colors.axisLabel)
+    for (k in 0..5) {
+        val v = vMin + (vMax - vMin) * k / 5.0
+        val y = yOf(v)
+        drawLine(color = colors.gridLine, start = Offset(ml, y), end = Offset(w - mr, y), strokeWidth = 1f)
+        val label = "%.0f".format(v)
+        val m = textMeasurer.measure(label, axisStyle)
+        drawText(m, topLeft = Offset(ml - m.size.width - 6f, y - m.size.height / 2f))
+    }
+
+    // ---- 6 Date ticks ----
+    for (k in 0..5) {
+        val dayOffset = totalDays * k / 5f
+        val tickDate = tMin.plusDays(dayOffset.toLong())
+        val x = ml + pw * (k / 5f)
+        val label = tickDate.format(DATE_FMT)
+        val m = textMeasurer.measure(label, axisStyle)
+        drawText(m, topLeft = Offset(x - m.size.width / 2f, h - mb + 6f))
+    }
+
+    // ---- Intake bars + deficit shading ----
+    for (point in points) {
+        val x = xOf(point.date)
+        val intakeKcal = point.intakeKcal ?: continue  // skip unlogged days
+
+        val yIntake = yOf(intakeKcal)
+        val yTdee = yOf(point.tdeeKcal)
+
+        // Intake bar (from bottom up to intake level)
+        drawRect(
+            color = colors.intakeBar,
+            topLeft = Offset(x - bw / 2f, yIntake),
+            size = Size(bw, base - yIntake),
+            alpha = 0.85f,
+        )
+
+        // Deficit-only shading: shade the gap between bar-top and TDEE line ONLY when intake < TDEE
+        if (intakeKcal < point.tdeeKcal) {
+            drawRect(
+                color = colors.deficitFill,
+                topLeft = Offset(x - bw / 2f, yTdee),
+                size = Size(bw, yIntake - yTdee),
+                alpha = 0.7f,
+            )
+        }
+    }
+
+    // ---- TDEE polyline (stroke-width 3 at reference width) ----
+    if (points.size >= 2) {
+        val path = Path()
+        points.forEachIndexed { i, p ->
+            val x = xOf(p.date)
+            val y = yOf(p.tdeeKcal)
+            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        }
+        drawPath(path, color = colors.tdeeLine, style = Stroke(width = 3f * scale))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Canvas drawing — matches donut() geometry from design/charts_gen.py
+// ---------------------------------------------------------------------------
+
+/**
+ * Draws the macro donut on the current (square) Canvas.
+ *
+ * Geometry mirrors donut() in design/charts_gen.py:
+ *   - 300×300 viewBox, cx=cy=150, r=95, stroke-width=34
+ *   - Arc segments: protein (proteinColor), fat (fatColor), carbs (carbColor)
+ *   - kcal total in center + "kcal so far" / "avg kcal/day" subtitle
+ */
+private fun DrawScope.drawDonut(
+    summary: MacroSummary,
+    isToday: Boolean,
+    colors: ChartColors,
+    textMeasurer: TextMeasurer,
+) {
+    val cx = size.width / 2f
+    val cy = size.height / 2f
+    // Scale radius and stroke-width from the 300×300 reference
+    val scale = size.width / 300f
+    val r = 95f * scale
+    val sw = 34f * scale
+
+    val proteinKcal = summary.proteinG * 4.0
+    val fatKcal = summary.fatG * 9.0
+    val carbKcal = summary.carbG * 4.0
+    val total = (proteinKcal + fatKcal + carbKcal).coerceAtLeast(1.0)
+    val cal = (summary.kcal).toInt()
+
+    val circumference = 2f * Math.PI.toFloat() * r
+
+    // Background ring (light color)
+    drawCircle(
+        color = colors.proteinColor.copy(alpha = 0.12f),
+        radius = r,
+        center = Offset(cx, cy),
+        style = Stroke(width = sw),
+    )
+
+    // Draw three arc segments using drawArc with stroke style.
+    // drawArc angles: 0 = 3 o'clock, rotate -90 to start at 12 o'clock.
+    // We use useCenter=false (arc only, not a pie slice) with a Stroke style.
+    var startAngle = -90f  // start at top (12 o'clock)
+
+    for ((kcal, color) in listOf(
+        proteinKcal to colors.proteinColor,
+        fatKcal to colors.fatColor,
+        carbKcal to colors.carbColor,
+    )) {
+        val sweepDeg = (kcal / total * 360.0).toFloat()
+        if (sweepDeg > 0f) {
+            drawArc(
+                color = color,
+                startAngle = startAngle,
+                sweepAngle = sweepDeg,
+                useCenter = false,
+                topLeft = Offset(cx - r, cy - r),
+                size = Size(r * 2, r * 2),
+                style = Stroke(width = sw, cap = StrokeCap.Butt),
+            )
+        }
+        startAngle += sweepDeg
+    }
+
+    // Center text: calorie total
+    val kcalStyle = TextStyle(
+        fontSize = (26f * scale).sp,
+        fontWeight = FontWeight.SemiBold,
+        color = colors.axisLabel,
+        textAlign = TextAlign.Center,
+    )
+    val kcalM = textMeasurer.measure(cal.toString(), kcalStyle)
+    drawText(kcalM, topLeft = Offset(cx - kcalM.size.width / 2f, cy - kcalM.size.height / 2f - 8f * scale))
+
+    val subLabel = if (isToday) "kcal so far" else "avg kcal/day"
+    val subStyle = TextStyle(
+        fontSize = (11f * scale).sp,
+        color = colors.axisLabel,
+        textAlign = TextAlign.Center,
+    )
+    val subM = textMeasurer.measure(subLabel, subStyle)
+    drawText(subM, topLeft = Offset(cx - subM.size.width / 2f, cy + kcalM.size.height / 2f - 4f * scale))
 }

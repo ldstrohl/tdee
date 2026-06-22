@@ -6,7 +6,10 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.tdee.app.TdeeApplication
+import com.tdee.app.data.ChartWindow
+import com.tdee.app.data.DayExpenditurePoint
 import com.tdee.app.data.DayWeightPoint
+import com.tdee.app.data.MacroSummary
 import com.tdee.app.data.TdeeRepository
 import com.tdee.app.data.WeightProjection
 import com.tdee.domain.Projection
@@ -63,6 +66,31 @@ enum class WeightRange(val label: String, val days: Int?) {
 }
 
 // ---------------------------------------------------------------------------
+// Expenditure range selection (1mo/3mo/6mo/1yr/all — no TODAY)
+// ---------------------------------------------------------------------------
+
+enum class ExpenditureRange(val label: String, val days: Int?) {
+    M1("1 mo", 30),
+    M3("3 mo", 90),
+    M6("6 mo", 180),
+    Y1("1 yr", 365),
+    ALL("All", null),
+}
+
+// ---------------------------------------------------------------------------
+// Macro window selection (Today/1mo/3mo/6mo/1yr/all)
+// ---------------------------------------------------------------------------
+
+enum class MacroWindow(val label: String, val chartWindow: ChartWindow) {
+    TODAY("Today", ChartWindow.TODAY),
+    M1("1 mo", ChartWindow.M1),
+    M3("3 mo", ChartWindow.M3),
+    M6("6 mo", ChartWindow.M6),
+    Y1("1 yr", ChartWindow.Y1),
+    ALL("All", ChartWindow.ALL),
+}
+
+// ---------------------------------------------------------------------------
 // UI state
 // ---------------------------------------------------------------------------
 
@@ -73,6 +101,13 @@ data class InsightsUiState(
     val predictionOn: Boolean = false,
     val projection: ProjectionUi = ProjectionUi.NoGoal,
     val isLoading: Boolean = true,
+    // Expenditure — independent of trend range/prediction
+    val allExpenditurePoints: List<DayExpenditurePoint> = emptyList(),
+    val visibleExpenditurePoints: List<DayExpenditurePoint> = emptyList(),
+    val expenditureRange: ExpenditureRange = ExpenditureRange.M3,
+    // Macro donut — independent of trend and expenditure
+    val macroSummary: MacroSummary? = null,
+    val macroWindow: MacroWindow = MacroWindow.TODAY,
 )
 
 // ---------------------------------------------------------------------------
@@ -99,6 +134,28 @@ class InsightsViewModel(private val repo: TdeeRepository) : ViewModel() {
     /** Toggle prediction without touching the selected range. */
     fun setPrediction(on: Boolean) {
         _state.value = _state.value.copy(predictionOn = on)
+    }
+
+    /** Change the expenditure chart range independently of the trend range. */
+    fun setExpenditureRange(range: ExpenditureRange) {
+        val current = _state.value
+        _state.value = current.copy(
+            expenditureRange = range,
+            visibleExpenditurePoints = sliceExpenditure(current.allExpenditurePoints, range),
+        )
+    }
+
+    /** Change the macro window independently of the trend and expenditure ranges. */
+    fun setMacroWindow(window: MacroWindow) {
+        _state.value = _state.value.copy(macroWindow = window)
+        viewModelScope.launch {
+            try {
+                val summary = repo.macroSummary(window.chartWindow)
+                _state.value = _state.value.copy(macroSummary = summary)
+            } catch (_: Exception) {
+                // Keep previous summary on error.
+            }
+        }
     }
 
     /**
@@ -133,7 +190,11 @@ class InsightsViewModel(private val repo: TdeeRepository) : ViewModel() {
                 val rawSeries = repo.weightSeries()
                 val allPoints = rawSeries.map { it.toLb() }
                 val projection = buildProjectionUi(repo.weightProjection())
+                val allExpenditure = repo.expenditureSeries()
+                val macroWindow = _state.value.macroWindow
+                val macroSummary = repo.macroSummary(macroWindow.chartWindow)
                 val range = _state.value.selectedRange
+                val expRange = _state.value.expenditureRange
                 _state.value = InsightsUiState(
                     allPoints = allPoints,
                     visiblePoints = slice(allPoints, range),
@@ -141,6 +202,11 @@ class InsightsViewModel(private val repo: TdeeRepository) : ViewModel() {
                     predictionOn = _state.value.predictionOn,
                     projection = projection,
                     isLoading = false,
+                    allExpenditurePoints = allExpenditure,
+                    visibleExpenditurePoints = sliceExpenditure(allExpenditure, expRange),
+                    expenditureRange = expRange,
+                    macroSummary = macroSummary,
+                    macroWindow = macroWindow,
                 )
             } catch (_: Exception) {
                 _state.value = _state.value.copy(isLoading = false)
@@ -149,6 +215,16 @@ class InsightsViewModel(private val repo: TdeeRepository) : ViewModel() {
     }
 
     private fun slice(all: List<WeightPointLb>, range: WeightRange): List<WeightPointLb> {
+        if (all.isEmpty()) return all
+        val days = range.days ?: return all
+        val cutoff = all.last().date.minusDays(days.toLong())
+        return all.filter { !it.date.isBefore(cutoff) }
+    }
+
+    private fun sliceExpenditure(
+        all: List<DayExpenditurePoint>,
+        range: ExpenditureRange,
+    ): List<DayExpenditurePoint> {
         if (all.isEmpty()) return all
         val days = range.days ?: return all
         val cutoff = all.last().date.minusDays(days.toLong())

@@ -2,6 +2,7 @@ package com.tdee.app.insights
 
 import androidx.room.Room
 import com.tdee.app.data.AppDatabase
+import com.tdee.app.data.ChartWindow
 import com.tdee.app.data.CurrentUser
 import com.tdee.app.data.DayWeightPoint
 import com.tdee.app.data.FoodEntryEntity
@@ -513,5 +514,205 @@ class InsightsViewModelTest {
         )
         val result = point.toLb()
         assertTrue(result.rawLb == null)
+    }
+
+    // -----------------------------------------------------------------------
+    // Helpers for food / expenditure tests
+    // -----------------------------------------------------------------------
+
+    private suspend fun insertFood(
+        date: LocalDate,
+        kcal: Double,
+        proteinG: Double = kcal * 0.20 / 4.0,
+        fatG: Double = kcal * 0.30 / 9.0,
+        carbG: Double = kcal * 0.50 / 4.0,
+    ) {
+        // Timestamp at noon on the given date so it falls in the log-day window
+        val ts = date.atStartOfDay(zone).toInstant().plusSeconds(12 * 3600)
+        db.foodEntryDao().insert(
+            FoodEntryEntity(
+                userId = userId,
+                timestamp = ts,
+                rawText = "test meal",
+                name = "Test Meal",
+                quantity = 1.0,
+                unit = "serving",
+                grams = 300.0,
+                kcal = kcal,
+                proteinG = proteinG,
+                fatG = fatG,
+                carbG = carbG,
+                sourceDb = FoodSourceDb.MANUAL,
+                createdAt = ts,
+                updatedAt = ts,
+            )
+        )
+    }
+
+    // -----------------------------------------------------------------------
+    // 6. Expenditure series
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `expenditure series is surfaced in VM state after load`() = runTest {
+        seedProfile()
+        seedWeightHistory(count = 10)
+        // Log food on 5 of the 10 days
+        for (i in 0 until 5) {
+            insertFood(today.minusDays(i.toLong()), kcal = 2000.0)
+        }
+
+        val vm = InsightsViewModel(repo)
+        awaitLoaded(vm)
+
+        val state = vm.state.value
+        assertTrue("Expenditure points should be non-empty", state.visibleExpenditurePoints.isNotEmpty())
+        // Days with food logged should have non-null intakeKcal
+        val loggedDays = state.visibleExpenditurePoints.filter { it.intakeKcal != null }
+        assertTrue("Logged days should have intake kcal", loggedDays.isNotEmpty())
+        // Days without food should have null intakeKcal
+        val unloggedDays = state.visibleExpenditurePoints.filter { it.intakeKcal == null }
+        assertTrue("Unlogged days should have null intake kcal", unloggedDays.isNotEmpty())
+    }
+
+    @Test
+    fun `expenditure range slicing returns only the windowed subset`() = runTest {
+        seedProfile()
+        // 50 days of weight + food data
+        seedWeightHistory(count = 50)
+        for (i in 0 until 50) {
+            insertFood(today.minusDays(i.toLong()), kcal = 2100.0)
+        }
+
+        val vm = InsightsViewModel(repo)
+        awaitLoaded(vm)
+
+        // Default range is M3 (90 days) — with 50 days of data, all points visible
+        val stateM3 = vm.state.value
+        assertEquals(ExpenditureRange.M3, stateM3.expenditureRange)
+
+        // Switch to M1 (30 days)
+        vm.setExpenditureRange(ExpenditureRange.M1)
+        val stateM1 = vm.state.value
+        val cutoff = today.minusDays(30)
+        assertTrue(
+            "All visible expenditure points should be within 30-day window",
+            stateM1.visibleExpenditurePoints.all { !it.date.isBefore(cutoff) },
+        )
+        assertEquals(today, stateM1.visibleExpenditurePoints.last().date)
+    }
+
+    @Test
+    fun `changing expenditure range does not affect trend range or prediction`() = runTest {
+        seedProfile()
+        seedWeightHistory(count = 60)
+
+        val vm = InsightsViewModel(repo)
+        awaitLoaded(vm)
+
+        vm.setRange(WeightRange.M6)
+        vm.setPrediction(true)
+        vm.setExpenditureRange(ExpenditureRange.M1)
+
+        val state = vm.state.value
+        assertEquals("Trend range unchanged", WeightRange.M6, state.selectedRange)
+        assertTrue("Prediction unchanged", state.predictionOn)
+        assertEquals("Expenditure range updated", ExpenditureRange.M1, state.expenditureRange)
+    }
+
+    // -----------------------------------------------------------------------
+    // 7. Macro summary
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `macro summary for TODAY reflects today's food entries`() = runTest {
+        seedProfile()
+        insertWeight(today, 80.0)
+        insertFood(today, kcal = 500.0, proteinG = 40.0, fatG = 15.0, carbG = 60.0)
+        insertFood(today, kcal = 300.0, proteinG = 20.0, fatG = 8.0, carbG = 40.0)
+
+        val summary = repo.macroSummary(ChartWindow.TODAY)
+
+        // Totals (not averages) for TODAY
+        assertEquals(500.0 + 300.0, summary.kcal, 1.0)
+        assertEquals(40.0 + 20.0, summary.proteinG, 0.5)
+        assertEquals(15.0 + 8.0, summary.fatG, 0.5)
+        assertEquals(60.0 + 40.0, summary.carbG, 0.5)
+        // completeDays and totalDays are both 1 sentinel for TODAY
+        assertEquals(1, summary.completeDays)
+        assertEquals(1, summary.totalDays)
+    }
+
+    @Test
+    fun `macro summary for M1 window averages over complete days only`() = runTest {
+        seedProfile()
+        seedWeightHistory(count = 35)
+
+        // Log food on 3 days within the 30-day window
+        val day1 = today.minusDays(5)
+        val day2 = today.minusDays(10)
+        val day3 = today.minusDays(20)
+        insertFood(day1, kcal = 2400.0, proteinG = 150.0, fatG = 80.0, carbG = 240.0)
+        insertFood(day2, kcal = 2100.0, proteinG = 120.0, fatG = 70.0, carbG = 210.0)
+        insertFood(day3, kcal = 1800.0, proteinG = 90.0, fatG = 60.0, carbG = 180.0)
+
+        val summary = repo.macroSummary(ChartWindow.M1)
+
+        // Should average over 3 complete days
+        assertEquals(3, summary.completeDays)
+        val expectedKcal = (2400.0 + 2100.0 + 1800.0) / 3.0
+        assertEquals(expectedKcal, summary.kcal, 1.0)
+        val expectedProtein = (150.0 + 120.0 + 90.0) / 3.0
+        assertEquals(expectedProtein, summary.proteinG, 0.5)
+    }
+
+    @Test
+    fun `macro summary completeDays and totalDays are correct for M1 window`() = runTest {
+        seedProfile()
+        seedWeightHistory(count = 35)
+        // Log on 2 of the 30 days in the window
+        insertFood(today.minusDays(3), kcal = 2000.0)
+        insertFood(today.minusDays(7), kcal = 2000.0)
+
+        val summary = repo.macroSummary(ChartWindow.M1)
+
+        assertEquals(2, summary.completeDays)
+        // totalDays spans from today-1month to today (inclusive); at least 30 days
+        assertTrue("totalDays should be >= 30", summary.totalDays >= 30)
+    }
+
+    @Test
+    fun `macro summary VM state uses TODAY by default`() = runTest {
+        seedProfile()
+        insertWeight(today, 80.0)
+        insertFood(today, kcal = 600.0, proteinG = 50.0, fatG = 20.0, carbG = 70.0)
+
+        val vm = InsightsViewModel(repo)
+        awaitLoaded(vm)
+
+        val state = vm.state.value
+        assertEquals(MacroWindow.TODAY, state.macroWindow)
+        assertNotNull("macroSummary should be loaded", state.macroSummary)
+        // For TODAY the kcal should match our single food entry
+        assertEquals(600.0, state.macroSummary!!.kcal, 1.0)
+    }
+
+    @Test
+    fun `setMacroWindow changes window without affecting expenditure or trend ranges`() = runTest {
+        seedProfile()
+        seedWeightHistory(count = 60)
+
+        val vm = InsightsViewModel(repo)
+        awaitLoaded(vm)
+
+        vm.setRange(WeightRange.M6)
+        vm.setExpenditureRange(ExpenditureRange.Y1)
+        vm.setMacroWindow(MacroWindow.M3)
+
+        // Allow the coroutine to complete
+        val state = vm.state.value
+        assertEquals("Trend range unchanged", WeightRange.M6, state.selectedRange)
+        assertEquals("Expenditure range unchanged", ExpenditureRange.Y1, state.expenditureRange)
+        assertEquals("Macro window updated", MacroWindow.M3, state.macroWindow)
     }
 }
