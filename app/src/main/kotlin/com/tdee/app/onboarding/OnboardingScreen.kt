@@ -1,0 +1,197 @@
+package com.tdee.app.onboarding
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.ElevatedFilterChip
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
+import com.tdee.domain.ActivityLevel
+import com.tdee.domain.Sex
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun OnboardingScreen(viewModel: OnboardingViewModel) {
+    val form by viewModel.form.collectAsState()
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp),
+    ) {
+        Text("Set Up Your Profile", style = MaterialTheme.typography.headlineSmall)
+
+        // Sex
+        SectionLabel("Biological sex")
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Sex.entries.forEach { sex ->
+                ElevatedFilterChip(
+                    selected = form.sex == sex,
+                    onClick = { viewModel.setSex(sex) },
+                    label = { Text(sex.name.lowercase().replaceFirstChar { it.uppercaseChar() }) },
+                )
+            }
+        }
+
+        // Birth year
+        OutlinedTextField(
+            value = form.birthYear,
+            onValueChange = viewModel::setBirthYear,
+            label = { Text("Birth year (e.g. 1990)") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        // Height
+        SectionLabel("Height")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = form.heightFt,
+                onValueChange = viewModel::setHeightFt,
+                label = { Text("ft") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+                modifier = Modifier.weight(1f),
+            )
+            OutlinedTextField(
+                value = form.heightIn,
+                onValueChange = viewModel::setHeightIn,
+                label = { Text("in") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+                modifier = Modifier.weight(1f),
+            )
+        }
+
+        // Current weight
+        OutlinedTextField(
+            value = form.currentWeightLb,
+            onValueChange = viewModel::setCurrentWeightLb,
+            label = { Text("Current weight (lb)") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        // Activity level
+        SectionLabel("Activity level")
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ActivityLevel.entries.forEach { level ->
+                ElevatedFilterChip(
+                    selected = form.activityLevel == level,
+                    onClick = { viewModel.setActivityLevel(level) },
+                    label = {
+                        Text(
+                            level.name.lowercase().replace('_', ' ')
+                                .replaceFirstChar { it.uppercaseChar() }
+                        )
+                    },
+                )
+            }
+        }
+
+        // Goal
+        SectionLabel("Goal")
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            GoalSelection.entries.forEach { goal ->
+                ElevatedFilterChip(
+                    selected = form.goal == goal,
+                    onClick = { viewModel.setGoal(goal) },
+                    label = {
+                        Text(
+                            goal.name.lowercase().replaceFirstChar { it.uppercaseChar() }
+                        )
+                    },
+                )
+            }
+        }
+
+        // Rate (only for CUT / BULK)
+        if (form.goal != GoalSelection.MAINTAIN) {
+            OutlinedTextField(
+                value = form.goalRateLbPerWeek,
+                onValueChange = viewModel::setGoalRateLbPerWeek,
+                label = {
+                    Text(
+                        if (form.goal == GoalSelection.CUT) "Loss rate (lb/week)"
+                        else "Gain rate (lb/week)"
+                    )
+                },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+
+        // Optional: goal weight
+        OutlinedTextField(
+            value = form.goalWeightLb,
+            onValueChange = viewModel::setGoalWeightLb,
+            label = { Text("Goal weight (lb) — optional") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        // Optional macro overrides
+        SectionLabel("Macro overrides (optional)")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = form.proteinGPerKg,
+                onValueChange = viewModel::setProteinGPerKg,
+                label = { Text("Protein g/kg") },
+                placeholder = { Text("2.0") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                singleLine = true,
+                modifier = Modifier.weight(1f),
+            )
+            OutlinedTextField(
+                value = form.fatPct,
+                onValueChange = viewModel::setFatPct,
+                label = { Text("Fat % (0–1)") },
+                placeholder = { Text("0.25") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                singleLine = true,
+                modifier = Modifier.weight(1f),
+            )
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Button(
+            onClick = viewModel::save,
+            enabled = form.canSave,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Get started")
+        }
+    }
+}
+
+@Composable
+private fun SectionLabel(text: String) {
+    Text(text, style = MaterialTheme.typography.labelLarge)
+}
