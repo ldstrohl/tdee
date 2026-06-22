@@ -1,5 +1,6 @@
 package com.tdee.app.data
 
+import com.tdee.domain.DailyIntake
 import com.tdee.domain.DefaultTdeeEngine
 import com.tdee.domain.GoalProjector
 import com.tdee.domain.Projection
@@ -9,6 +10,7 @@ import com.tdee.domain.TdeeEstimate
 import com.tdee.domain.TdeeMethod
 import com.tdee.domain.UserProfile
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 import java.time.Clock
 import java.time.ZoneId
@@ -157,6 +159,60 @@ class TdeeRepository(
             trendCacheDao.upsert(cacheRow)
             day = day.plusDays(1)
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Routing / onboarding helpers
+    // -----------------------------------------------------------------------
+
+    /**
+     * Reactive profile query for the current user. Emits `null` when no profile exists (→
+     * onboarding) and the [UserProfileEntity] once one is saved (→ dashboard). Callers observe
+     * this Flow to drive top-level navigation without polling.
+     */
+    fun observeProfile(): Flow<UserProfileEntity?> =
+        profileDao.observeByUserId(currentUser.userId())
+
+    /**
+     * Atomically saves [profile] (with `userId` forced to the current user) and inserts a seed
+     * weight entry. Call once during onboarding immediately after the user provides their starting
+     * weight.
+     *
+     * The weight entry uses [WeightSource.MANUAL] and is timestamped at [clock]'s current instant.
+     */
+    suspend fun saveProfileAndSeedWeight(
+        profile: UserProfileEntity,
+        seedWeightKg: Double,
+    ) = withContext(Dispatchers.IO) {
+        val uid = currentUser.userId()
+        val now = clock.instant()
+        val scopedProfile = profile.copy(userId = uid)
+        profileDao.upsert(scopedProfile)
+        weightDao.insert(
+            WeightEntryEntity(
+                userId = uid,
+                timestamp = now,
+                weightKg = seedWeightKg,
+                source = WeightSource.MANUAL,
+                createdAt = now,
+            )
+        )
+    }
+
+    /**
+     * Returns the [DailyIntake] whose log-day equals today, or `null` when:
+     * - no profile exists for the current user (no `dayStartHour` available), or
+     * - the user has logged no food entries on today's log-day.
+     *
+     * "Today" is the log-day that contains [clock]'s current instant.
+     */
+    suspend fun todayConsumed(): DailyIntake? = withContext(Dispatchers.IO) {
+        val uid = currentUser.userId()
+        val profileEntity = profileDao.get(uid) ?: return@withContext null
+        val today = logDay(clock.instant(), zone, profileEntity.dayStartHour)
+        foodDao.getActive(uid)
+            .toDailyIntake(zone, profileEntity.dayStartHour)
+            .firstOrNull { it.date == today }
     }
 }
 
