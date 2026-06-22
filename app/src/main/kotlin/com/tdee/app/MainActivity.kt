@@ -17,6 +17,8 @@ import com.tdee.app.addweight.AddWeightScreen
 import com.tdee.app.addweight.AddWeightViewModel
 import com.tdee.app.dashboard.DashboardScreen
 import com.tdee.app.dashboard.DashboardViewModel
+import com.tdee.app.insights.InsightsScreen
+import com.tdee.app.insights.InsightsViewModel
 import com.tdee.app.onboarding.OnboardingScreen
 import com.tdee.app.onboarding.OnboardingViewModel
 import com.tdee.app.settings.SettingsScreen
@@ -65,9 +67,19 @@ class MainActivity : ComponentActivity() {
                                         viewModel(factory = DashboardViewModel.Factory)
                                     DashboardScreen(
                                         viewModel = vm,
-                                        onAddFood = { navController.navigate("add_food") },   // wired for Task B
-                                        onAddWeight = { navController.navigate("add_weight") }, // wired for Task C
+                                        onAddFood = { navController.navigate("add_food") },
+                                        onAddWeight = { navController.navigate("add_weight") },
                                         onOpenSettings = { navController.navigate("settings") },
+                                        onOpenInsights = { navController.navigate("insights") },
+                                    )
+                                }
+
+                                composable("insights") {
+                                    val vm: InsightsViewModel =
+                                        viewModel(factory = InsightsViewModel.Factory)
+                                    InsightsScreen(
+                                        viewModel = vm,
+                                        onBack = { navController.popBackStack() },
                                     )
                                 }
 
