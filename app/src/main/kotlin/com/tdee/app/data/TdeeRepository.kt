@@ -11,6 +11,8 @@ import com.tdee.domain.TdeeMethod
 import com.tdee.domain.UserProfile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.withContext
 import java.time.Clock
 import java.time.ZoneId
@@ -265,6 +267,35 @@ class TdeeRepository(
      */
     suspend fun softDeleteFood(id: Long) = withContext(Dispatchers.IO) {
         foodDao.softDelete(id, clock.instant())
+    }
+
+    /**
+     * Reactive stream of today's non-deleted food entries for the current user.
+     *
+     * Room re-emits the list automatically whenever any food_entry row changes (insert or
+     * soft-delete), so collectors on the dashboard stay up-to-date without polling or
+     * re-navigation.
+     *
+     * The today window ([windowStart, windowEnd)) is computed once when this Flow is collected,
+     * using the profile's [UserProfileEntity.dayStartHour] and [clock]'s current instant. This
+     * is acceptable for MVP — no mid-session midnight-rollover handling is performed.
+     *
+     * Emits an empty list when no profile exists for the current user.
+     */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    fun observeTodayFoodEntries(): Flow<List<FoodEntryEntity>> {
+        val uid = currentUser.userId()
+        return profileDao.observeByUserId(uid).flatMapLatest { profileEntity ->
+            if (profileEntity == null) {
+                emptyFlow()
+            } else {
+                val dayStart = logDay(clock.instant(), zone, profileEntity.dayStartHour)
+                val windowStart = dayStart.atStartOfDay(zone).toInstant()
+                    .plusSeconds(profileEntity.dayStartHour * 3600L)
+                val windowEnd = windowStart.plusSeconds(24 * 3600L)
+                foodDao.observeActiveInRange(uid, windowStart, windowEnd)
+            }
+        }
     }
 
     /**

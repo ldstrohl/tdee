@@ -6,13 +6,16 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.tdee.app.TdeeApplication
+import com.tdee.app.data.FoodEntryEntity
 import com.tdee.app.data.TdeeRepository
 import com.tdee.domain.Targets
 import com.tdee.domain.TdeeMethod
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 // ---------------------------------------------------------------------------
@@ -62,8 +65,21 @@ class DashboardViewModel(private val repo: TdeeRepository) : ViewModel() {
     private val _state = MutableStateFlow<DashboardUiState>(DashboardUiState.Loading)
     val state: StateFlow<DashboardUiState> = _state.asStateFlow()
 
+    /**
+     * Reactive list of today's food entries. Room re-emits on every insert or soft-delete,
+     * so the dashboard updates without polling or re-navigation. The window is fixed at
+     * collection time — see [TdeeRepository.observeTodayFoodEntries] for the MVP caveat on
+     * midnight rollovers.
+     */
+    val todayFoods: StateFlow<List<FoodEntryEntity>> = repo.observeTodayFoodEntries()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
     init {
         load()
+    }
+
+    fun deleteFood(id: Long) {
+        viewModelScope.launch { repo.softDeleteFood(id) }
     }
 
     private fun load() {

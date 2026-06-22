@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
+import kotlinx.coroutines.flow.Flow
 import java.time.Instant
 
 @Dao
@@ -35,6 +36,22 @@ interface FoodEntryDao {
         "ORDER BY timestamp ASC"
     )
     suspend fun getActiveInRange(userId: String, from: Instant, until: Instant): List<FoodEntryEntity>
+
+    /**
+     * Reactive (Flow) variant of [getActiveInRange]. Room re-emits whenever any food_entry row
+     * changes, so callers automatically see adds and soft-deletes without polling.
+     *
+     * The [from]/[until] window is computed at collection time by the caller — see
+     * [TdeeRepository.observeTodayFoodEntries] for the exact boundary logic. This is
+     * acceptable for MVP; no mid-session midnight-rollover handling is performed.
+     */
+    @Query(
+        "SELECT * FROM food_entry " +
+        "WHERE userId = :userId AND deletedAt IS NULL " +
+        "AND timestamp >= :from AND timestamp < :until " +
+        "ORDER BY timestamp ASC"
+    )
+    fun observeActiveInRange(userId: String, from: Instant, until: Instant): Flow<List<FoodEntryEntity>>
 
     /** Soft-delete by setting deletedAt. */
     @Query("UPDATE food_entry SET deletedAt = :deletedAt WHERE id = :id")

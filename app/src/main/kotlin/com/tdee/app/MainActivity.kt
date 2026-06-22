@@ -20,6 +20,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.tdee.app.addfood.AddFoodScreen
+import com.tdee.app.addfood.AddFoodViewModel
 import com.tdee.app.dashboard.DashboardScreen
 import com.tdee.app.dashboard.DashboardViewModel
 import com.tdee.app.onboarding.OnboardingScreen
@@ -73,17 +75,12 @@ class MainActivity : ComponentActivity() {
                                 }
 
                                 composable("add_food") {
-                                    // TODO: Task B replaces this placeholder with the real Add Food screen.
-                                    Column(
-                                        modifier = Modifier.fillMaxSize().statusBarsPadding(),
-                                        verticalArrangement = Arrangement.Center,
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                    ) {
-                                        Text("Add Food", style = MaterialTheme.typography.headlineSmall)
-                                        Button(onClick = { navController.popBackStack() }) {
-                                            Text("Back")
-                                        }
-                                    }
+                                    val vm: AddFoodViewModel =
+                                        viewModel(factory = AddFoodViewModel.Factory)
+                                    AddFoodScreen(
+                                        viewModel = vm,
+                                        onDone = { navController.popBackStack() },
+                                    )
                                 }
 
                                 composable("add_weight") {

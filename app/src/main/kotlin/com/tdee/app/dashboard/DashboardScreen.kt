@@ -9,15 +9,20 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.tdee.app.data.FoodEntryEntity
 import java.util.Locale
 
 @Composable
@@ -27,6 +32,7 @@ fun DashboardScreen(
     onAddWeight: () -> Unit = {}, // wired for Task C
 ) {
     val state by viewModel.state.collectAsState()
+    val todayFoods by viewModel.todayFoods.collectAsState()
 
     Column(
         modifier = Modifier
@@ -47,6 +53,13 @@ fun DashboardScreen(
                 LoadedContent(s)
             }
         }
+
+        // Today's food list — reactive, updates immediately on add/delete.
+        TodayFoodSection(
+            foods = todayFoods,
+            onAddFood = onAddFood,
+            onDelete = { viewModel.deleteFood(it) },
+        )
     }
 }
 
@@ -130,5 +143,54 @@ private fun MacroRow(label: String, value: Double, unit: String) {
     ) {
         Text(label, style = MaterialTheme.typography.bodyMedium)
         Text("%.0f %s".format(value, unit), style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+@Composable
+private fun TodayFoodSection(
+    foods: List<FoodEntryEntity>,
+    onAddFood: () -> Unit,
+    onDelete: (Long) -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Today's food", style = MaterialTheme.typography.titleMedium)
+                TextButton(onClick = onAddFood) { Text("+ Add") }
+            }
+
+            if (foods.isEmpty()) {
+                Text(
+                    "No food logged yet",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                foods.forEach { entry ->
+                    HorizontalDivider()
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(entry.name, style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                "%,d kcal".format(entry.kcal.toInt()),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        TextButton(onClick = { onDelete(entry.id) }) {
+                            Text("Delete", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                }
+            }
+        }
     }
 }
