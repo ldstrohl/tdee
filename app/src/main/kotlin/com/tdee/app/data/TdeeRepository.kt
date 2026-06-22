@@ -179,6 +179,25 @@ class TdeeRepository(
         profileDao.observeByUserId(currentUser.userId())
 
     /**
+     * Updates [profile] for the current user without inserting any weight entry.
+     *
+     * Preserves [UserProfileEntity.createdAt] from the existing DB row (falls back to
+     * [clock]'s current instant if no row exists yet) and sets [UserProfileEntity.updatedAt]
+     * to [clock]'s current instant. Call after onboarding from the Edit Profile screen.
+     */
+    suspend fun updateProfile(profile: UserProfileEntity) = withContext(Dispatchers.IO) {
+        val uid = currentUser.userId()
+        val now = clock.instant()
+        val existing = profileDao.get(uid)
+        val scopedProfile = profile.copy(
+            userId = uid,
+            createdAt = existing?.createdAt ?: now,
+            updatedAt = now,
+        )
+        profileDao.upsert(scopedProfile)
+    }
+
+    /**
      * Atomically saves [profile] (with `userId` forced to the current user) and inserts a seed
      * weight entry. Call once during onboarding immediately after the user provides their starting
      * weight.

@@ -17,6 +17,8 @@ import com.tdee.app.addweight.AddWeightScreen
 import com.tdee.app.addweight.AddWeightViewModel
 import com.tdee.app.dashboard.DashboardScreen
 import com.tdee.app.dashboard.DashboardViewModel
+import com.tdee.app.editprofile.EditProfileScreen
+import com.tdee.app.editprofile.EditProfileViewModel
 import com.tdee.app.insights.HelpScreen
 import com.tdee.app.insights.InsightsScreen
 import com.tdee.app.insights.InsightsViewModel
@@ -95,6 +97,16 @@ class MainActivity : ComponentActivity() {
                                         current = pref,
                                         onSelect = { container.themeStore.set(it) },
                                         onBack = { navController.popBackStack() },
+                                        onEditProfile = { navController.navigate("edit_profile") },
+                                    )
+                                }
+
+                                composable("edit_profile") {
+                                    val vm: EditProfileViewModel =
+                                        viewModel(factory = EditProfileViewModel.Factory)
+                                    EditProfileScreen(
+                                        viewModel = vm,
+                                        onDone = { navController.popBackStack() },
                                     )
                                 }
 

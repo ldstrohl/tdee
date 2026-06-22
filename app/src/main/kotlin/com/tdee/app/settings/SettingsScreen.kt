@@ -21,13 +21,14 @@ import androidx.compose.ui.unit.dp
 import com.tdee.app.ui.theme.ThemePreference
 
 /**
- * App settings. Currently just the theme selector (Light / Dark / System).
+ * App settings. Currently the theme selector (Light / Dark / System) and an "Edit profile" entry.
  */
 @Composable
 fun SettingsScreen(
     current: ThemePreference,
     onSelect: (ThemePreference) -> Unit,
     onBack: () -> Unit,
+    onEditProfile: () -> Unit = {},
 ) {
     Column(
         modifier = Modifier
@@ -40,6 +41,17 @@ fun SettingsScreen(
         Row(verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = onBack) { Text("Back") }
             Text("Settings", style = MaterialTheme.typography.headlineSmall)
+        }
+
+        // Edit profile entry
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onEditProfile() }
+                .padding(vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Edit profile", style = MaterialTheme.typography.bodyLarge)
         }
 
         Text(
