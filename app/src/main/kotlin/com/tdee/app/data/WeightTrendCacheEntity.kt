@@ -1,12 +1,18 @@
 package com.tdee.app.data
 
 import androidx.room.Entity
-import androidx.room.PrimaryKey
 import java.time.LocalDate
 
-@Entity(tableName = "weight_trend_cache")
+/**
+ * Composite primary key: (userId, date). Each user has an independent cache timeline.
+ */
+@Entity(
+    tableName = "weight_trend_cache",
+    primaryKeys = ["userId", "date"],
+)
 data class WeightTrendCacheEntity(
-    @PrimaryKey val date: LocalDate,
+    val userId: String,
+    val date: LocalDate,
     val emaKg: Double,
     val tdeeEstimate: Double,
     val tdeeMethod: TdeeMethodDb,

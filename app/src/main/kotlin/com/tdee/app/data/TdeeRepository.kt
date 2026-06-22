@@ -16,10 +16,12 @@ import java.time.ZoneId
 /**
  * Integration layer between the Room data layer and the domain TDEE engine.
  *
- * All compute functions require that a [UserProfileEntity] exists in the database
- * (onboarding guarantees this before any of these are called). If no profile is
- * found, they throw [IllegalStateException] with message "No user profile".
+ * All compute functions require that a [UserProfileEntity] exists in the database for the current
+ * user (onboarding guarantees this before any of these are called). If no profile is found for
+ * [currentUser], they throw [IllegalStateException] with message "No user profile".
  *
+ * @param currentUser  provides the id of the active user; today returns a stable local UUID,
+ *   later replaced by a real auth-backed impl without changing this class.
  * @param zone  zone used for log-day bucketing; pass [ZoneId.of]("UTC") in tests.
  * @param clock source of "now"; pass [Clock.fixed] in tests for determinism.
  */
@@ -28,6 +30,7 @@ class TdeeRepository(
     private val weightDao: WeightEntryDao,
     private val foodDao: FoodEntryDao,
     private val trendCacheDao: WeightTrendCacheDao,
+    private val currentUser: CurrentUser,
     private val zone: ZoneId = ZoneId.systemDefault(),
     private val clock: Clock = Clock.systemDefaultZone(),
 ) {
@@ -37,17 +40,17 @@ class TdeeRepository(
     // -----------------------------------------------------------------------
 
     /**
-     * Load all data and build a [DefaultTdeeEngine]. Caller must already be on a
-     * background thread (the suspend DAO calls satisfy this when used with Room's
-     * coroutine dispatcher, but we wrap each public function in withContext(IO)
-     * to be explicit).
+     * Load all data for the current user and build a [DefaultTdeeEngine]. Caller must already be
+     * on a background thread (the suspend DAO calls satisfy this when used with Room's coroutine
+     * dispatcher, but we wrap each public function in withContext(IO) to be explicit).
      */
     private suspend fun buildEngine(): Pair<DefaultTdeeEngine, UserProfile> {
-        val profileEntity = profileDao.get()
+        val uid = currentUser.userId()
+        val profileEntity = profileDao.get(uid)
             ?: throw IllegalStateException("No user profile")
         val profile = profileEntity.toDomain()
-        val samples = weightDao.getAll().toWeightSamples()
-        val intake = foodDao.getActive().toDailyIntake(zone, profile.dayStartHour)
+        val samples = weightDao.getAll(uid).toWeightSamples()
+        val intake = foodDao.getActive(uid).toDailyIntake(zone, profile.dayStartHour)
         return DefaultTdeeEngine(samples, intake, profile, zone) to profile
     }
 
@@ -97,7 +100,7 @@ class TdeeRepository(
 
     /**
      * Rebuilds [WeightTrendCacheEntity] rows for every log-day from the first aggregated
-     * weight day through the current log-day (inclusive).
+     * weight day through the current log-day (inclusive) for the current user.
      *
      * Each row stores the EMA trend weight and TDEE estimate that the engine produces
      * when queried at an instant that maps to that log-day (specifically: midnight of
@@ -111,11 +114,12 @@ class TdeeRepository(
      * No-op if there are no weight samples.
      */
     suspend fun recomputeTrendCache() = withContext(Dispatchers.IO) {
-        val profileEntity = profileDao.get()
+        val uid = currentUser.userId()
+        val profileEntity = profileDao.get(uid)
             ?: throw IllegalStateException("No user profile")
         val profile = profileEntity.toDomain()
-        val samples = weightDao.getAll().toWeightSamples()
-        val intake = foodDao.getActive().toDailyIntake(zone, profile.dayStartHour)
+        val samples = weightDao.getAll(uid).toWeightSamples()
+        val intake = foodDao.getActive(uid).toDailyIntake(zone, profile.dayStartHour)
 
         if (samples.isEmpty()) return@withContext
 
@@ -142,6 +146,7 @@ class TdeeRepository(
             val emaKg = engine.weightTrendAt(dayInstant)
 
             val cacheRow = WeightTrendCacheEntity(
+                userId = uid,
                 date = day,
                 emaKg = emaKg,
                 tdeeEstimate = estimate.valueKcal,

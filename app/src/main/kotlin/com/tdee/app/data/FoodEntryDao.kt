@@ -16,13 +16,13 @@ interface FoodEntryDao {
     @Update
     suspend fun update(entry: FoodEntryEntity)
 
-    /** All rows including soft-deleted; primarily for debugging/export. */
-    @Query("SELECT * FROM food_entry ORDER BY timestamp ASC")
-    suspend fun getAll(): List<FoodEntryEntity>
+    /** All rows for the user including soft-deleted; primarily for debugging/export. */
+    @Query("SELECT * FROM food_entry WHERE userId = :userId ORDER BY timestamp ASC")
+    suspend fun getAll(userId: String): List<FoodEntryEntity>
 
-    /** Non-deleted entries only — used for intake mapping. */
-    @Query("SELECT * FROM food_entry WHERE deletedAt IS NULL ORDER BY timestamp ASC")
-    suspend fun getActive(): List<FoodEntryEntity>
+    /** Non-deleted entries for the user only — used for intake mapping. */
+    @Query("SELECT * FROM food_entry WHERE userId = :userId AND deletedAt IS NULL ORDER BY timestamp ASC")
+    suspend fun getActive(userId: String): List<FoodEntryEntity>
 
     /** Soft-delete by setting deletedAt. */
     @Query("UPDATE food_entry SET deletedAt = :deletedAt WHERE id = :id")
@@ -31,6 +31,10 @@ interface FoodEntryDao {
     @Query("DELETE FROM food_entry WHERE id = :id")
     suspend fun hardDeleteById(id: Long)
 
+    @Query("DELETE FROM food_entry WHERE userId = :userId")
+    suspend fun deleteAll(userId: String)
+
+    /** Delete all rows across all users — for test teardown only. */
     @Query("DELETE FROM food_entry")
     suspend fun deleteAll()
 }

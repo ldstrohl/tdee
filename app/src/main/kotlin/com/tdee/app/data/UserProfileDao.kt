@@ -12,11 +12,14 @@ interface UserProfileDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(profile: UserProfileEntity)
 
-    @Query("SELECT * FROM user_profile WHERE id = 1 LIMIT 1")
-    suspend fun get(): UserProfileEntity?
+    @Query("SELECT * FROM user_profile WHERE userId = :userId LIMIT 1")
+    suspend fun get(userId: String): UserProfileEntity?
 
     @Update
     suspend fun update(profile: UserProfileEntity)
+
+    @Query("DELETE FROM user_profile WHERE userId = :userId")
+    suspend fun delete(userId: String)
 
     @Query("DELETE FROM user_profile")
     suspend fun deleteAll()

@@ -12,15 +12,19 @@ interface WeightTrendCacheDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entry: WeightTrendCacheEntity)
 
-    @Query("SELECT * FROM weight_trend_cache ORDER BY date ASC")
-    suspend fun getAll(): List<WeightTrendCacheEntity>
+    @Query("SELECT * FROM weight_trend_cache WHERE userId = :userId ORDER BY date ASC")
+    suspend fun getAll(userId: String): List<WeightTrendCacheEntity>
 
-    @Query("SELECT * FROM weight_trend_cache WHERE date = :date LIMIT 1")
-    suspend fun getByDate(date: LocalDate): WeightTrendCacheEntity?
+    @Query("SELECT * FROM weight_trend_cache WHERE userId = :userId AND date = :date LIMIT 1")
+    suspend fun getByDate(userId: String, date: LocalDate): WeightTrendCacheEntity?
 
-    @Query("DELETE FROM weight_trend_cache WHERE date = :date")
-    suspend fun deleteByDate(date: LocalDate)
+    @Query("DELETE FROM weight_trend_cache WHERE userId = :userId AND date = :date")
+    suspend fun deleteByDate(userId: String, date: LocalDate)
 
+    @Query("DELETE FROM weight_trend_cache WHERE userId = :userId")
+    suspend fun deleteAll(userId: String)
+
+    /** Delete all rows across all users — for test teardown only. */
     @Query("DELETE FROM weight_trend_cache")
     suspend fun deleteAll()
 }

@@ -7,10 +7,15 @@ import java.time.Instant
 
 @Entity(
     tableName = "weight_entry",
-    indices = [Index(value = ["healthConnectUid"], unique = true, name = "idx_weight_hc_uid")],
+    indices = [
+        Index(value = ["userId"]),
+        // Dedup is per-user: the same Health Connect reading cannot appear twice for the same user.
+        Index(value = ["userId", "healthConnectUid"], unique = true, name = "idx_weight_user_hc_uid"),
+    ],
 )
 data class WeightEntryEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val userId: String,
     val timestamp: Instant,
     val weightKg: Double,
     val bodyFatPct: Double? = null,

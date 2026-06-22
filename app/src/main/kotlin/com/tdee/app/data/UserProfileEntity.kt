@@ -8,8 +8,7 @@ import java.time.Instant
 
 @Entity(tableName = "user_profile")
 data class UserProfileEntity(
-    @PrimaryKey val id: Long = 1L,
-    val userId: String,
+    @PrimaryKey val userId: String,
     val sex: Sex,
     val birthYear: Int,
     val heightCm: Double,

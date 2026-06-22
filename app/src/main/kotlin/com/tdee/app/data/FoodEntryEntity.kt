@@ -1,12 +1,17 @@
 package com.tdee.app.data
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import java.time.Instant
 
-@Entity(tableName = "food_entry")
+@Entity(
+    tableName = "food_entry",
+    indices = [Index(value = ["userId"])],
+)
 data class FoodEntryEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val userId: String,
     val timestamp: Instant,
     val rawText: String,
     val name: String,

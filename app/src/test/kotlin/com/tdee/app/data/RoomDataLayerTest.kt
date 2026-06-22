@@ -27,6 +27,8 @@ class RoomDataLayerTest {
     private lateinit var profileDao: UserProfileDao
     private lateinit var trendDao: WeightTrendCacheDao
 
+    private val testUserId = "test-user-id"
+
     @Before
     fun setup() {
         db = Room.inMemoryDatabaseBuilder(
@@ -66,7 +68,7 @@ class RoomDataLayerTest {
         foodDao.insert(entry1)
         foodDao.insert(entry2)
 
-        val intakes = foodDao.getActive().toDailyIntake(zone, dayStartHour)
+        val intakes = foodDao.getActive(testUserId).toDailyIntake(zone, dayStartHour)
 
         assertEquals(1, intakes.size)
         assertEquals(LocalDate.of(2024, 1, 15), intakes[0].date)
@@ -82,7 +84,7 @@ class RoomDataLayerTest {
         foodDao.insert(makeFoodEntry(timestamp = Instant.parse("2024-01-15T08:00:00Z"), kcal = 500.0))
         foodDao.insert(makeFoodEntry(timestamp = Instant.parse("2024-01-16T08:00:00Z"), kcal = 400.0))
 
-        val intakes = foodDao.getActive().toDailyIntake(zone, dayStartHour)
+        val intakes = foodDao.getActive(testUserId).toDailyIntake(zone, dayStartHour)
 
         assertEquals(2, intakes.size)
         assertEquals(LocalDate.of(2024, 1, 15), intakes[0].date)
@@ -103,7 +105,7 @@ class RoomDataLayerTest {
         // 2024-01-15T05:00Z is after the boundary, so it belongs to 2024-01-15
         foodDao.insert(makeFoodEntry(timestamp = Instant.parse("2024-01-15T05:00:00Z"), kcal = 600.0))
 
-        val intakes = foodDao.getActive().toDailyIntake(zone, dayStartHour)
+        val intakes = foodDao.getActive(testUserId).toDailyIntake(zone, dayStartHour)
 
         assertEquals(2, intakes.size)
         // First entry → log-day 2024-01-14
@@ -123,7 +125,7 @@ class RoomDataLayerTest {
         foodDao.insert(makeFoodEntry(timestamp = Instant.parse("2024-01-15T04:30:00Z"), kcal = 350.0))
         foodDao.insert(makeFoodEntry(timestamp = Instant.parse("2024-01-16T03:59:00Z"), kcal = 250.0))
 
-        val intakes = foodDao.getActive().toDailyIntake(zone, dayStartHour)
+        val intakes = foodDao.getActive(testUserId).toDailyIntake(zone, dayStartHour)
 
         assertEquals(1, intakes.size)
         assertEquals(LocalDate.of(2024, 1, 15), intakes[0].date)
@@ -138,7 +140,7 @@ class RoomDataLayerTest {
     fun `days with entries produce complete=true DailyIntake`() = runTest {
         foodDao.insert(makeFoodEntry(timestamp = Instant.parse("2024-01-15T12:00:00Z"), kcal = 500.0))
 
-        val intakes = foodDao.getActive().toDailyIntake(ZoneOffset.UTC, 0)
+        val intakes = foodDao.getActive(testUserId).toDailyIntake(ZoneOffset.UTC, 0)
 
         assertEquals(1, intakes.size)
         assertTrue(intakes[0].complete)
@@ -149,7 +151,7 @@ class RoomDataLayerTest {
         // Only one entry on Jan 15; Jan 16 has no entries
         foodDao.insert(makeFoodEntry(timestamp = Instant.parse("2024-01-15T12:00:00Z"), kcal = 500.0))
 
-        val intakes = foodDao.getActive().toDailyIntake(ZoneOffset.UTC, 0)
+        val intakes = foodDao.getActive(testUserId).toDailyIntake(ZoneOffset.UTC, 0)
 
         val dates = intakes.map { it.date }
         assertTrue(LocalDate.of(2024, 1, 15) in dates)
@@ -161,7 +163,7 @@ class RoomDataLayerTest {
         val id = foodDao.insert(makeFoodEntry(timestamp = Instant.parse("2024-01-15T12:00:00Z"), kcal = 500.0))
         foodDao.softDelete(id, Instant.now())
 
-        val intakes = foodDao.getActive().toDailyIntake(ZoneOffset.UTC, 0)
+        val intakes = foodDao.getActive(testUserId).toDailyIntake(ZoneOffset.UTC, 0)
 
         assertTrue(intakes.isEmpty())
     }
@@ -174,7 +176,7 @@ class RoomDataLayerTest {
     fun `HEALTH_CONNECT source maps to DEVICE quality`() = runTest {
         weightDao.insert(makeWeightEntry(source = WeightSource.HEALTH_CONNECT, weightKg = 80.0))
 
-        val samples = weightDao.getAll().toWeightSamples()
+        val samples = weightDao.getAll(testUserId).toWeightSamples()
 
         assertEquals(1, samples.size)
         assertEquals(SampleQuality.DEVICE, samples[0].quality)
@@ -185,7 +187,7 @@ class RoomDataLayerTest {
     fun `MANUAL source maps to MANUAL quality`() = runTest {
         weightDao.insert(makeWeightEntry(source = WeightSource.MANUAL, weightKg = 75.0))
 
-        val samples = weightDao.getAll().toWeightSamples()
+        val samples = weightDao.getAll(testUserId).toWeightSamples()
 
         assertEquals(1, samples.size)
         assertEquals(SampleQuality.MANUAL, samples[0].quality)
@@ -198,7 +200,7 @@ class RoomDataLayerTest {
         weightDao.insert(makeWeightEntry(timestamp = t1, weightKg = 80.0))
         weightDao.insert(makeWeightEntry(timestamp = t2, weightKg = 80.5))
 
-        val samples = weightDao.getAll().toWeightSamples()
+        val samples = weightDao.getAll(testUserId).toWeightSamples()
 
         assertEquals(2, samples.size)
         assertTrue(samples.any { it.t == t1 })
@@ -206,20 +208,35 @@ class RoomDataLayerTest {
     }
 
     // -----------------------------------------------------------------------
-    // 4. HealthConnect-uid dedup
+    // 4. HealthConnect-uid dedup (per-user)
     // -----------------------------------------------------------------------
 
     @Test
-    fun `inserting two entries with same healthConnectUid yields one row`() = runTest {
+    fun `inserting two entries with same healthConnectUid for same user yields one row`() = runTest {
         val e1 = makeWeightEntry(weightKg = 80.0, healthConnectUid = "hc-uid-001")
         val e2 = makeWeightEntry(weightKg = 81.0, healthConnectUid = "hc-uid-001")
 
         weightDao.insertIgnoreDuplicate(e1)
         weightDao.insertIgnoreDuplicate(e2) // should be ignored
 
-        val all = weightDao.getAll()
+        val all = weightDao.getAll(testUserId)
         assertEquals(1, all.size)
         assertEquals(80.0, all[0].weightKg, 0.001)
+    }
+
+    @Test
+    fun `same healthConnectUid for different users is not deduped`() = runTest {
+        val userA = "user-a"
+        val userB = "user-b"
+        val e1 = makeWeightEntry(weightKg = 80.0, healthConnectUid = "hc-uid-shared", userId = userA)
+        val e2 = makeWeightEntry(weightKg = 81.0, healthConnectUid = "hc-uid-shared", userId = userB)
+
+        weightDao.insertIgnoreDuplicate(e1)
+        weightDao.insertIgnoreDuplicate(e2)
+
+        // Each user sees their own row; the unique constraint is per (userId, healthConnectUid).
+        assertEquals(1, weightDao.getAll(userA).size)
+        assertEquals(1, weightDao.getAll(userB).size)
     }
 
     @Test
@@ -230,7 +247,7 @@ class RoomDataLayerTest {
         weightDao.insertIgnoreDuplicate(e1)
         weightDao.insertIgnoreDuplicate(e2)
 
-        val all = weightDao.getAll()
+        val all = weightDao.getAll(testUserId)
         assertEquals(2, all.size)
     }
 
@@ -243,7 +260,7 @@ class RoomDataLayerTest {
         val ts = Instant.parse("2024-06-15T14:30:00Z")
         weightDao.insert(makeWeightEntry(timestamp = ts, weightKg = 78.0))
 
-        val loaded = weightDao.getAll().first()
+        val loaded = weightDao.getAll(testUserId).first()
         assertEquals(ts, loaded.timestamp)
     }
 
@@ -251,6 +268,7 @@ class RoomDataLayerTest {
     fun `LocalDate round-trips through WeightTrendCacheEntity`() = runTest {
         val date = LocalDate.of(2024, 3, 22)
         val entity = WeightTrendCacheEntity(
+            userId = testUserId,
             date = date,
             emaKg = 79.5,
             tdeeEstimate = 2200.0,
@@ -260,7 +278,7 @@ class RoomDataLayerTest {
         )
         trendDao.upsert(entity)
 
-        val loaded = trendDao.getByDate(date)!!
+        val loaded = trendDao.getByDate(testUserId, date)!!
         assertEquals(date, loaded.date)
         assertEquals(TdeeMethodDb.BLEND, loaded.tdeeMethod)
         assertEquals(79.5, loaded.emaKg, 0.001)
@@ -277,7 +295,7 @@ class RoomDataLayerTest {
         )
         weightDao.insert(entry)
 
-        val loaded = weightDao.getAll().first()
+        val loaded = weightDao.getAll(testUserId).first()
         assertEquals(WeightSource.HEALTH_CONNECT, loaded.source)
     }
 
@@ -287,7 +305,7 @@ class RoomDataLayerTest {
         val entry = makeFoodEntry(timestamp = ts, kcal = 450.0, sourceDb = FoodSourceDb.USDA)
         foodDao.insert(entry)
 
-        val loaded = foodDao.getAll().first()
+        val loaded = foodDao.getAll(testUserId).first()
         assertEquals(ts, loaded.timestamp)
         assertEquals(FoodSourceDb.USDA, loaded.sourceDb)
     }
@@ -301,7 +319,9 @@ class RoomDataLayerTest {
         weightKg: Double = 80.0,
         source: WeightSource = WeightSource.MANUAL,
         healthConnectUid: String? = null,
+        userId: String = testUserId,
     ): WeightEntryEntity = WeightEntryEntity(
+        userId = userId,
         timestamp = timestamp,
         weightKg = weightKg,
         source = source,
@@ -313,7 +333,9 @@ class RoomDataLayerTest {
         timestamp: Instant = Instant.parse("2024-01-15T12:00:00Z"),
         kcal: Double = 500.0,
         sourceDb: FoodSourceDb = FoodSourceDb.MANUAL,
+        userId: String = testUserId,
     ): FoodEntryEntity = FoodEntryEntity(
+        userId = userId,
         timestamp = timestamp,
         rawText = "test food",
         name = "Test Food",
