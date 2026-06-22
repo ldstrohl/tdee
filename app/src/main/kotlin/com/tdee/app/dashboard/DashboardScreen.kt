@@ -21,7 +21,11 @@ import androidx.compose.ui.unit.dp
 import java.util.Locale
 
 @Composable
-fun DashboardScreen(viewModel: DashboardViewModel) {
+fun DashboardScreen(
+    viewModel: DashboardViewModel,
+    onAddFood: () -> Unit = {},   // wired for Task B
+    onAddWeight: () -> Unit = {}, // wired for Task C
+) {
     val state by viewModel.state.collectAsState()
 
     Column(

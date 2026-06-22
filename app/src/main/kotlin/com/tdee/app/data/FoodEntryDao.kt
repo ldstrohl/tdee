@@ -24,6 +24,18 @@ interface FoodEntryDao {
     @Query("SELECT * FROM food_entry WHERE userId = :userId AND deletedAt IS NULL ORDER BY timestamp ASC")
     suspend fun getActive(userId: String): List<FoodEntryEntity>
 
+    /**
+     * Non-deleted entries for the user whose timestamp falls in [from, until).
+     * Used by [TdeeRepository.todayFoodEntries] to limit the scan to the current log-day window.
+     */
+    @Query(
+        "SELECT * FROM food_entry " +
+        "WHERE userId = :userId AND deletedAt IS NULL " +
+        "AND timestamp >= :from AND timestamp < :until " +
+        "ORDER BY timestamp ASC"
+    )
+    suspend fun getActiveInRange(userId: String, from: Instant, until: Instant): List<FoodEntryEntity>
+
     /** Soft-delete by setting deletedAt. */
     @Query("UPDATE food_entry SET deletedAt = :deletedAt WHERE id = :id")
     suspend fun softDelete(id: Long, deletedAt: Instant)

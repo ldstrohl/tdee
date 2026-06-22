@@ -214,6 +214,111 @@ class TdeeRepository(
             .toDailyIntake(zone, profileEntity.dayStartHour)
             .firstOrNull { it.date == today }
     }
+
+    // -----------------------------------------------------------------------
+    // Food logging
+    // -----------------------------------------------------------------------
+
+    /**
+     * Inserts a new manual food entry for the current user timestamped at [clock]'s current instant.
+     *
+     * @param name     display name (also stored as [FoodEntryEntity.rawText]).
+     * @param kcal     energy in kcal.
+     * @param proteinG protein in grams.
+     * @param fatG     fat in grams.
+     * @param carbG    carbohydrate in grams.
+     * @param grams    serving weight in grams; defaults to 0 when not known.
+     */
+    suspend fun addFood(
+        name: String,
+        kcal: Double,
+        proteinG: Double,
+        fatG: Double,
+        carbG: Double,
+        grams: Double? = null,
+    ) = withContext(Dispatchers.IO) {
+        val uid = currentUser.userId()
+        val now = clock.instant()
+        foodDao.insert(
+            FoodEntryEntity(
+                userId = uid,
+                timestamp = now,
+                rawText = name,
+                name = name,
+                quantity = 1.0,
+                unit = "serving",
+                grams = grams ?: 0.0,
+                kcal = kcal,
+                proteinG = proteinG,
+                fatG = fatG,
+                carbG = carbG,
+                sourceDb = FoodSourceDb.MANUAL,
+                createdAt = now,
+                updatedAt = now,
+            )
+        )
+    }
+
+    /**
+     * Soft-deletes the food entry with the given [id] by setting its [FoodEntryEntity.deletedAt]
+     * to [clock]'s current instant.
+     */
+    suspend fun softDeleteFood(id: Long) = withContext(Dispatchers.IO) {
+        foodDao.softDelete(id, clock.instant())
+    }
+
+    /**
+     * Returns the current user's non-deleted food entries whose log-day equals today's log-day
+     * (computed using the profile's [UserProfileEntity.dayStartHour] and [clock]'s current instant).
+     *
+     * Returns an empty list when the profile has no entries for today or no profile exists.
+     */
+    suspend fun todayFoodEntries(): List<FoodEntryEntity> = withContext(Dispatchers.IO) {
+        val uid = currentUser.userId()
+        val profileEntity = profileDao.get(uid) ?: return@withContext emptyList()
+        val dayStart = logDay(clock.instant(), zone, profileEntity.dayStartHour)
+        // Log-day window: [dayStart + dayStartHour, dayStart + dayStartHour + 24h)
+        val windowStart = dayStart.atStartOfDay(zone).toInstant()
+            .plusSeconds(profileEntity.dayStartHour * 3600L)
+        val windowEnd = windowStart.plusSeconds(24 * 3600L)
+        foodDao.getActiveInRange(uid, windowStart, windowEnd)
+    }
+
+    /**
+     * Returns the summed macros for today's food entries.
+     * All fields are 0.0 when no entries exist for today.
+     */
+    suspend fun todayConsumedMacros(): ConsumedMacros = withContext(Dispatchers.IO) {
+        val entries = todayFoodEntries()
+        ConsumedMacros(
+            kcal = entries.sumOf { it.kcal },
+            proteinG = entries.sumOf { it.proteinG },
+            fatG = entries.sumOf { it.fatG },
+            carbG = entries.sumOf { it.carbG },
+        )
+    }
+
+    // -----------------------------------------------------------------------
+    // Weight logging
+    // -----------------------------------------------------------------------
+
+    /**
+     * Inserts a new manual weight entry for the current user, converting [weightLb] to kg
+     * (× 0.45359237) and timestamping it at [clock]'s current instant.
+     */
+    suspend fun addWeight(weightLb: Double) = withContext(Dispatchers.IO) {
+        val uid = currentUser.userId()
+        val now = clock.instant()
+        weightDao.insert(
+            WeightEntryEntity(
+                userId = uid,
+                timestamp = now,
+                weightKg = weightLb * 0.45359237,
+                source = WeightSource.MANUAL,
+                createdAt = now,
+            )
+        )
+    }
 }
 
 // ---------------------------------------------------------------------------
