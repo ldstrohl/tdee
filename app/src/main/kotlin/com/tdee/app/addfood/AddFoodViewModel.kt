@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.time.LocalDate
 
 // ---------------------------------------------------------------------------
 // Form state
@@ -24,6 +25,7 @@ data class AddFoodFormState(
     val fatG: String = "",
     val carbG: String = "",
     val grams: String = "",
+    val selectedDate: LocalDate = LocalDate.now(),
 ) {
     val kcalDouble: Double? get() = kcal.toDoubleOrNull()?.takeIf { it >= 0 }
 
@@ -38,9 +40,12 @@ data class AddFoodFormState(
 // ViewModel
 // ---------------------------------------------------------------------------
 
-class AddFoodViewModel(private val repo: TdeeRepository) : ViewModel() {
+class AddFoodViewModel(
+    private val repo: TdeeRepository,
+    private val today: LocalDate = LocalDate.now(),
+) : ViewModel() {
 
-    private val _form = MutableStateFlow(AddFoodFormState())
+    private val _form = MutableStateFlow(AddFoodFormState(selectedDate = today))
     val form: StateFlow<AddFoodFormState> = _form.asStateFlow()
 
     private val _saved = MutableStateFlow(false)
@@ -58,6 +63,14 @@ class AddFoodViewModel(private val repo: TdeeRepository) : ViewModel() {
     fun setCarbG(v: String) = _form.update { it.copy(carbG = v) }
     fun setGrams(v: String) = _form.update { it.copy(grams = v) }
 
+    /**
+     * Sets the log date. Silently clamps future dates to [today] so the UI cannot
+     * schedule food entries in the future.
+     */
+    fun setSelectedDate(date: LocalDate) {
+        _form.update { it.copy(selectedDate = minOf(date, today)) }
+    }
+
     // -----------------------------------------------------------------------
     // Save
     // -----------------------------------------------------------------------
@@ -74,6 +87,7 @@ class AddFoodViewModel(private val repo: TdeeRepository) : ViewModel() {
                 fatG = f.fatG.toDoubleOrNull()?.takeIf { it >= 0 } ?: 0.0,
                 carbG = f.carbG.toDoubleOrNull()?.takeIf { it >= 0 } ?: 0.0,
                 grams = f.grams.toDoubleOrNull()?.takeIf { it >= 0 },
+                loggedDate = f.selectedDate,
             )
             _saved.value = true
         }

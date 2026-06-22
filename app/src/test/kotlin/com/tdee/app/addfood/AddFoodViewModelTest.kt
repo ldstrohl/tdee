@@ -30,6 +30,7 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import java.time.Clock
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneOffset
 
 /**
@@ -106,7 +107,7 @@ class AddFoodViewModelTest {
             clock = fixedClock,
         )
 
-        vm = AddFoodViewModel(repo)
+        vm = AddFoodViewModel(repo, today = LocalDate.of(2026, 6, 21))
     }
 
     @After

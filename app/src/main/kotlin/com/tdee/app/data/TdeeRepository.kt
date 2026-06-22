@@ -244,14 +244,18 @@ class TdeeRepository(
     // -----------------------------------------------------------------------
 
     /**
-     * Inserts a new manual food entry for the current user timestamped at [clock]'s current instant.
+     * Inserts a new manual food entry for the current user.
      *
-     * @param name     display name (also stored as [FoodEntryEntity.rawText]).
-     * @param kcal     energy in kcal.
-     * @param proteinG protein in grams.
-     * @param fatG     fat in grams.
-     * @param carbG    carbohydrate in grams.
-     * @param grams    serving weight in grams; defaults to 0 when not known.
+     * @param name       display name (also stored as [FoodEntryEntity.rawText]).
+     * @param kcal       energy in kcal.
+     * @param proteinG   protein in grams.
+     * @param fatG       fat in grams.
+     * @param carbG      carbohydrate in grams.
+     * @param grams      serving weight in grams; defaults to 0 when not known.
+     * @param loggedDate when non-null, backdates the entry so its log-day equals this date.
+     *   The timestamp is placed at noon of that day (dayStartHour + 12 hours past midnight in
+     *   [zone]), which guarantees [logDay](timestamp) == [loggedDate] for any dayStartHour 0–23.
+     *   When null, the entry is timestamped at [clock]'s current instant (current behavior).
      */
     suspend fun addFood(
         name: String,
@@ -260,13 +264,22 @@ class TdeeRepository(
         fatG: Double,
         carbG: Double,
         grams: Double? = null,
+        loggedDate: LocalDate? = null,
     ) = withContext(Dispatchers.IO) {
         val uid = currentUser.userId()
-        val now = clock.instant()
+        val profileEntity = profileDao.get(uid)
+        val dayStartHour = profileEntity?.dayStartHour ?: 0
+        val timestamp = if (loggedDate != null) {
+            loggedDate.atStartOfDay(zone).toInstant()
+                .plusSeconds((dayStartHour + 12) * 3600L)
+        } else {
+            clock.instant()
+        }
+        val createdAt = clock.instant()
         foodDao.insert(
             FoodEntryEntity(
                 userId = uid,
-                timestamp = now,
+                timestamp = timestamp,
                 rawText = name,
                 name = name,
                 quantity = 1.0,
@@ -277,8 +290,8 @@ class TdeeRepository(
                 fatG = fatG,
                 carbG = carbG,
                 sourceDb = FoodSourceDb.MANUAL,
-                createdAt = now,
-                updatedAt = now,
+                createdAt = createdAt,
+                updatedAt = createdAt,
             )
         )
     }
@@ -357,21 +370,36 @@ class TdeeRepository(
 
     /**
      * Inserts a new manual weight entry for the current user, converting [weightLb] to kg
-     * (× 0.45359237) and timestamping it at [clock]'s current instant.
+     * (× 0.45359237).
+     *
+     * @param weightLb   body weight in pounds.
+     * @param loggedDate when non-null, backdates the entry so its log-day equals this date.
+     *   The timestamp is placed at noon of that day (dayStartHour + 12 hours past midnight in
+     *   [zone]), which guarantees [logDay](timestamp) == [loggedDate] for any dayStartHour 0–23.
+     *   When null, the entry is timestamped at [clock]'s current instant (current behavior).
      */
-    suspend fun addWeight(weightLb: Double) = withContext(Dispatchers.IO) {
-        val uid = currentUser.userId()
-        val now = clock.instant()
-        weightDao.insert(
-            WeightEntryEntity(
-                userId = uid,
-                timestamp = now,
-                weightKg = weightLb * 0.45359237,
-                source = WeightSource.MANUAL,
-                createdAt = now,
+    suspend fun addWeight(weightLb: Double, loggedDate: LocalDate? = null) =
+        withContext(Dispatchers.IO) {
+            val uid = currentUser.userId()
+            val profileEntity = profileDao.get(uid)
+            val dayStartHour = profileEntity?.dayStartHour ?: 0
+            val timestamp = if (loggedDate != null) {
+                loggedDate.atStartOfDay(zone).toInstant()
+                    .plusSeconds((dayStartHour + 12) * 3600L)
+            } else {
+                clock.instant()
+            }
+            val createdAt = clock.instant()
+            weightDao.insert(
+                WeightEntryEntity(
+                    userId = uid,
+                    timestamp = timestamp,
+                    weightKg = weightLb * 0.45359237,
+                    source = WeightSource.MANUAL,
+                    createdAt = createdAt,
+                )
             )
-        )
-    }
+        }
 
     // -----------------------------------------------------------------------
     // Chart data methods

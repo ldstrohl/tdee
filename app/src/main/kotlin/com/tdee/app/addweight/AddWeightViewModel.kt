@@ -11,11 +11,18 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.time.LocalDate
 
-class AddWeightViewModel(private val repo: TdeeRepository) : ViewModel() {
+class AddWeightViewModel(
+    private val repo: TdeeRepository,
+    private val today: LocalDate = LocalDate.now(),
+) : ViewModel() {
 
     private val _weightLb = MutableStateFlow("")
     val weightLb: StateFlow<String> = _weightLb.asStateFlow()
+
+    private val _selectedDate = MutableStateFlow(today)
+    val selectedDate: StateFlow<LocalDate> = _selectedDate.asStateFlow()
 
     private val _saved = MutableStateFlow(false)
     /** Flips to true after a successful save. Observe to navigate away. */
@@ -28,10 +35,18 @@ class AddWeightViewModel(private val repo: TdeeRepository) : ViewModel() {
         _weightLb.value = v
     }
 
+    /**
+     * Sets the log date. Silently clamps future dates to [today] so the UI cannot
+     * schedule weight entries in the future.
+     */
+    fun setSelectedDate(date: LocalDate) {
+        _selectedDate.value = minOf(date, today)
+    }
+
     fun save() {
         val lb = _weightLb.value.toDoubleOrNull()?.takeIf { it > 0 } ?: return
         viewModelScope.launch {
-            repo.addWeight(lb)
+            repo.addWeight(lb, loggedDate = _selectedDate.value)
             _saved.value = true
         }
     }
