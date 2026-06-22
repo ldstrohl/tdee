@@ -624,6 +624,14 @@ class TdeeRepository(
         val uid = currentUser.userId()
         val profileEntity = profileDao.get(uid)
             ?: throw IllegalStateException("No user profile")
+        // Give the sample profile a goal + loss rate so the prediction overlay is demoable.
+        profileDao.upsert(
+            profileEntity.copy(
+                goalWeightKg = 84.0,          // ~185 lb, below the seeded current weight
+                goalRateKgPerWeek = -0.45,    // ~1 lb/week loss, so goal-pace projects
+                updatedAt = clock.instant(),
+            )
+        )
         val profile = profileEntity.toDomain()
 
         val rng = Random(seed = 42L)

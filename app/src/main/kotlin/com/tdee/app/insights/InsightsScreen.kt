@@ -113,7 +113,7 @@ private fun TrendChartSection(
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Weight Trend", style = MaterialTheme.typography.titleMedium)
 
-        // Range pills + prediction toggle
+        // Range pills (own row)
         Row(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -126,9 +126,11 @@ private fun TrendChartSection(
                     onClick = { onRangeSelected(range) },
                 )
             }
-            Spacer(modifier = Modifier.weight(1f))
+        }
+        // Prediction toggle on its own row so its label never clips
+        Row(modifier = Modifier.fillMaxWidth()) {
             Pill(
-                label = "Prediction",
+                label = "🔮 Prediction",
                 active = state.predictionOn,
                 onClick = onPredictionToggle,
             )
@@ -166,6 +168,8 @@ private fun TrendChartSection(
             else -> {
                 val chartColors = LocalChartColors.current
                 val textMeasurer = rememberTextMeasurer()
+                // Goal line always shows when a goal is set; the projection LINES only when toggled on.
+                val goalLbAlways = (state.projection as? ProjectionUi.Ready)?.goalLb
                 val projectionArg = if (state.predictionOn) state.projection else ProjectionUi.NoGoal
 
                 Canvas(
@@ -175,6 +179,7 @@ private fun TrendChartSection(
                 ) {
                     drawTrendChart(
                         points = state.visiblePoints,
+                        goalLb = goalLbAlways,
                         projection = projectionArg,
                         colors = chartColors,
                         textMeasurer = textMeasurer,
@@ -235,6 +240,7 @@ private val DASH_3_3 = PathEffect.dashPathEffect(floatArrayOf(3f, 3f))
  */
 private fun DrawScope.drawTrendChart(
     points: List<WeightPointLb>,
+    goalLb: Double?,
     projection: ProjectionUi,
     colors: ChartColors,
     textMeasurer: TextMeasurer,
@@ -279,7 +285,7 @@ private fun DrawScope.drawTrendChart(
     val allYVals = buildList<Double> {
         addAll(points.mapNotNull { it.rawLb })
         addAll(points.map { it.emaLb })
-        projReady?.goalLb?.let { add(it) }
+        goalLb?.let { add(it) }
     }
     val vMin = (allYVals.minOrNull() ?: 100.0) - 2.0
     val vMax = (allYVals.maxOrNull() ?: 200.0) + 2.0
@@ -308,8 +314,7 @@ private fun DrawScope.drawTrendChart(
         drawText(m, topLeft = Offset(x - m.size.width / 2f, h - mb + 6f))
     }
 
-    // ---- Goal dashed line + label ----
-    val goalLb = projReady?.goalLb
+    // ---- Goal dashed line + label (always shown when a goal is set) ----
     if (goalLb != null) {
         val gy = yOf(goalLb)
         drawLine(
@@ -321,7 +326,8 @@ private fun DrawScope.drawTrendChart(
         )
         val glText = "goal %.0f lb".format(goalLb)
         val glM = textMeasurer.measure(glText, TextStyle(fontSize = 10.sp, color = colors.goalLine))
-        drawText(glM, topLeft = Offset(w - mr - glM.size.width - 4f, gy - glM.size.height - 4f))
+        // Left-anchored so it never collides with the right-side projection end-labels
+        drawText(glM, topLeft = Offset(ml + 4f, gy - glM.size.height - 4f))
     }
 
     // ---- Raw scatter dots (r≈2.4 at reference width) ----
@@ -377,8 +383,8 @@ private fun DrawScope.drawTrendChart(
                 gLbl,
                 TextStyle(fontSize = 10.sp, color = colors.projectionGoal, fontWeight = FontWeight.SemiBold),
             )
-            // Label above the end-dot (offset -10 as in the SVG yoff=-10 for C_PGOAL)
-            drawText(gM, topLeft = Offset(endX - gM.size.width / 2f, goalY - gM.size.height - 10f))
+            // Label above the end-dot, clamped to stay within the canvas width
+            drawText(gM, topLeft = Offset((endX - gM.size.width / 2f).coerceIn(2f, w - gM.size.width - 2f), goalY - gM.size.height - 10f))
         }
 
         // Current pace line
@@ -399,8 +405,8 @@ private fun DrawScope.drawTrendChart(
                     cLbl,
                     TextStyle(fontSize = 10.sp, color = colors.projectionCurrent, fontWeight = FontWeight.SemiBold),
                 )
-                // Label below the end-dot (offset +16 as in the SVG yoff=16 for C_PCUR)
-                drawText(cM, topLeft = Offset(endX - cM.size.width / 2f, goalY + 16f))
+                // Label below the end-dot, clamped to stay within the canvas width
+                drawText(cM, topLeft = Offset((endX - cM.size.width / 2f).coerceIn(2f, w - cM.size.width - 2f), goalY + 16f))
             }
 
             is PaceUi.Unreachable -> {
