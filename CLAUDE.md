@@ -93,6 +93,10 @@ $ADB -s emulator-5554 exec-out screencap -p > /tmp/shot.png   # then Read the PN
 $ADB -s emulator-5554 shell input tap X Y                     # interact
 $ADB -s emulator-5554 shell uiautomator dump                  # find element bounds
 ```
+**Tap coordinates:** get them from `uiautomator dump` (true device pixels, e.g. 1080×2400) — do
+NOT eyeball the screenshot the Read tool shows (it's scaled, and guessing/­multiplying misses
+targets). Parse `bounds="[x1,y1][x2,y2]"`, tap the center. Compose chips/buttons appear as text
+nodes; the submit button may be below the fold — `input swipe` to scroll, then re-dump.
 Use the emulator for visual sign-off of UI work (agents build + run logic tests; orchestrator
 installs, launches, screenshots, and confirms rendering before committing).
 
@@ -101,6 +105,15 @@ Note: the `~/AudiobookWearOS` project (similar Android/Compose setup) drives **p
 `EmulatorReadme.md` are good references for emulator + adb workflows.
 
 ## Status
-Spec → scaffold → math engine (`:domain`) → Room data layer → `TdeeRepository` are done, committed,
-and tested. Next planned: multi-user seam retrofit, then app plumbing/DI, onboarding, and a minimal
-dashboard (see the plan discussed in-session / `outline.md` modules 0 and 5).
+Done, committed, tested: spec → scaffold → math engine (`:domain`) → Room data layer →
+`TdeeRepository` → multi-user seam → app DI/plumbing → **onboarding screen** → **minimal dashboard +
+routing**. The full vertical slice (onboarding → persistence → engine → dashboard) is verified on the
+emulator with correct Mifflin–St Jeor math and a working Calibrating badge. 75 unit tests green.
+
+Layout: `com.tdee.app` → `di/` (AppContainer), `data/` (Room + repository), `onboarding/`,
+`dashboard/`; `MainActivity` routes on `repository.observeProfile()` (null → onboarding, else dashboard).
+
+Not yet built (next candidates): food logging + `/parse` proxy (modules 1–2), Health Connect sync
+(module 3), Vico charts + goal-projection what-if (modules 5/4b), weekly check-in (module 8), export
+(module 7). UI ViewModels use the `viewModelFactory { initializer { ... } }` + `APPLICATION_KEY`
+pattern; reuse it.
