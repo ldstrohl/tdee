@@ -10,6 +10,7 @@ import com.tdee.app.data.TargetPeriodDao
 import com.tdee.app.data.UserProfileDao
 import com.tdee.app.data.WeightEntryDao
 import com.tdee.app.data.WeightTrendCacheDao
+import com.tdee.app.ui.theme.ThemeStore
 
 /**
  * Manual DI container. Holds lazily-initialized app-scoped singletons.
@@ -34,6 +35,8 @@ class AppContainer(context: Context) {
     val currentUser: SharedPreferencesCurrentUser by lazy {
         SharedPreferencesCurrentUser(appContext)
     }
+
+    val themeStore: ThemeStore by lazy { ThemeStore(appContext) }
 
     val repository: TdeeRepository by lazy {
         TdeeRepository(

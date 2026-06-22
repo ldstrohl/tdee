@@ -15,7 +15,10 @@ import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.withContext
 import java.time.Clock
+import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
+import kotlin.random.Random
 
 /**
  * Integration layer between the Room data layer and the domain TDEE engine.
@@ -349,6 +352,332 @@ class TdeeRepository(
                 createdAt = now,
             )
         )
+    }
+
+    // -----------------------------------------------------------------------
+    // Chart data methods
+    // -----------------------------------------------------------------------
+
+    /**
+     * Returns one [DayWeightPoint] per log-day from the first weight measurement through today.
+     *
+     * [DayWeightPoint.rawKg] is the first-of-day (earliest timestamp) raw weight for that day,
+     * or null if no measurement was recorded on that day.
+     * [DayWeightPoint.emaKg] is the engine EMA at that day — always present.
+     *
+     * Note: builds a [DefaultTdeeEngine] and queries it once per day — O(N²) in the number of
+     * days. Acceptable for MVP; cache via [recomputeTrendCache] amortizes this for display use.
+     *
+     * Returns an empty list when no weight samples exist.
+     */
+    suspend fun weightSeries(): List<DayWeightPoint> = withContext(Dispatchers.IO) {
+        val uid = currentUser.userId()
+        val profileEntity = profileDao.get(uid)
+            ?: throw IllegalStateException("No user profile")
+        val profile = profileEntity.toDomain()
+        val weightEntities = weightDao.getAll(uid)
+        if (weightEntities.isEmpty()) return@withContext emptyList()
+
+        val samples = weightEntities.toWeightSamples()
+        val intake = foodDao.getActive(uid).toDailyIntake(zone, profile.dayStartHour)
+        val engine = DefaultTdeeEngine(samples, intake, profile, zone)
+
+        // Build first-of-day raw weight map using same bucketing rule as the engine:
+        // group by log-day, pick the entry with the earliest timestamp within each day.
+        val rawByDay: Map<LocalDate, Double> = weightEntities
+            .groupBy { logDay(it.timestamp, zone, profile.dayStartHour) }
+            .mapValues { (_, entries) -> entries.minBy { it.timestamp }.weightKg }
+
+        val firstDay = rawByDay.keys.min()
+        val today = logDay(clock.instant(), zone, profile.dayStartHour)
+
+        val result = mutableListOf<DayWeightPoint>()
+        var day = firstDay
+        while (!day.isAfter(today)) {
+            val dayInstant = day.atStartOfDay(zone).toInstant()
+                .plusSeconds(profile.dayStartHour.toLong() * 3600)
+            val emaKg = engine.weightTrendAt(dayInstant)
+            result.add(DayWeightPoint(date = day, rawKg = rawByDay[day], emaKg = emaKg))
+            day = day.plusDays(1)
+        }
+        result
+    }
+
+    /**
+     * Returns one [DayExpenditurePoint] per log-day from the first weight measurement through today.
+     *
+     * [DayExpenditurePoint.intakeKcal] is the logged kcal for that day if the day had at least one
+     * food entry (complete=true in the engine's DailyIntake), or null otherwise. Never zero-filled.
+     * [DayExpenditurePoint.tdeeKcal] and [calibrating] come from [DefaultTdeeEngine.estimateAt].
+     *
+     * Returns an empty list when no weight samples exist.
+     */
+    suspend fun expenditureSeries(): List<DayExpenditurePoint> = withContext(Dispatchers.IO) {
+        val uid = currentUser.userId()
+        val profileEntity = profileDao.get(uid)
+            ?: throw IllegalStateException("No user profile")
+        val profile = profileEntity.toDomain()
+        val weightEntities = weightDao.getAll(uid)
+        if (weightEntities.isEmpty()) return@withContext emptyList()
+
+        val samples = weightEntities.toWeightSamples()
+        val intakeList = foodDao.getActive(uid).toDailyIntake(zone, profile.dayStartHour)
+        val engine = DefaultTdeeEngine(samples, intakeList, profile, zone)
+
+        val intakeByDay: Map<LocalDate, DailyIntake> = intakeList.associateBy { it.date }
+        val firstDay = samples.minOf { logDay(it.t, zone, profile.dayStartHour) }
+        val today = logDay(clock.instant(), zone, profile.dayStartHour)
+
+        val result = mutableListOf<DayExpenditurePoint>()
+        var day = firstDay
+        while (!day.isAfter(today)) {
+            val dayInstant = day.atStartOfDay(zone).toInstant()
+                .plusSeconds(profile.dayStartHour.toLong() * 3600)
+            val estimate = engine.estimateAt(dayInstant)
+            val intake = intakeByDay[day]
+            result.add(
+                DayExpenditurePoint(
+                    date = day,
+                    intakeKcal = if (intake?.complete == true) intake.kcal else null,
+                    tdeeKcal = estimate.valueKcal,
+                    calibrating = estimate.calibrating,
+                )
+            )
+            day = day.plusDays(1)
+        }
+        result
+    }
+
+    /**
+     * Returns macro and calorie summary for the given [window].
+     *
+     * For [ChartWindow.TODAY]: returns today's running totals.
+     * For all other windows: returns per-day averages over complete logging days only within the
+     * window. [MacroSummary.completeDays] = days with at least one entry; [MacroSummary.totalDays]
+     * = calendar days in the window.
+     *
+     * If no complete days exist in the window (non-TODAY), all macro/calorie fields are 0.0
+     * and [MacroSummary.completeDays] = 0.
+     */
+    suspend fun macroSummary(window: ChartWindow): MacroSummary = withContext(Dispatchers.IO) {
+        val uid = currentUser.userId()
+        val profileEntity = profileDao.get(uid)
+            ?: throw IllegalStateException("No user profile")
+        val profile = profileEntity.toDomain()
+        val targets = proposedTargets()
+
+        if (window == ChartWindow.TODAY) {
+            val macros = todayConsumedMacros()
+            return@withContext MacroSummary(
+                proteinG = macros.proteinG,
+                fatG = macros.fatG,
+                carbG = macros.carbG,
+                kcal = macros.kcal,
+                completeDays = 1,
+                totalDays = 1,
+                targets = targets,
+            )
+        }
+
+        val today = logDay(clock.instant(), zone, profile.dayStartHour)
+        val windowStart: LocalDate = when (window) {
+            ChartWindow.M1  -> today.minusMonths(1)
+            ChartWindow.M3  -> today.minusMonths(3)
+            ChartWindow.M6  -> today.minusMonths(6)
+            ChartWindow.Y1  -> today.minusYears(1)
+            ChartWindow.ALL -> {
+                val allEntries = foodDao.getActive(uid)
+                if (allEntries.isEmpty()) today
+                else allEntries.minOf { logDay(it.timestamp, zone, profile.dayStartHour) }
+            }
+            ChartWindow.TODAY -> today // unreachable; handled above
+        }
+
+        val totalDays = (windowStart.until(today, java.time.temporal.ChronoUnit.DAYS) + 1).toInt()
+
+        val intakeList = foodDao.getActive(uid).toDailyIntake(zone, profile.dayStartHour)
+        val completeDaysInWindow = intakeList.filter { di ->
+            di.complete && !di.date.isBefore(windowStart) && !di.date.isAfter(today)
+        }
+
+        if (completeDaysInWindow.isEmpty()) {
+            return@withContext MacroSummary(
+                proteinG = 0.0,
+                fatG = 0.0,
+                carbG = 0.0,
+                kcal = 0.0,
+                completeDays = 0,
+                totalDays = totalDays,
+                targets = targets,
+            )
+        }
+
+        // Per-day averages over complete days only require the food entries for those days.
+        val foodEntries = foodDao.getActive(uid).filter { it.deletedAt == null }
+        val entriesByDay = foodEntries.groupBy { logDay(it.timestamp, zone, profile.dayStartHour) }
+        val windowDates = completeDaysInWindow.map { it.date }.toSet()
+
+        var totalProteinG = 0.0
+        var totalFatG = 0.0
+        var totalCarbG = 0.0
+        var totalKcal = 0.0
+
+        for (date in windowDates) {
+            val dayEntries = entriesByDay[date] ?: continue
+            totalProteinG += dayEntries.sumOf { it.proteinG }
+            totalFatG += dayEntries.sumOf { it.fatG }
+            totalCarbG += dayEntries.sumOf { it.carbG }
+            totalKcal += dayEntries.sumOf { it.kcal }
+        }
+
+        val n = windowDates.size.toDouble()
+        MacroSummary(
+            proteinG = totalProteinG / n,
+            fatG = totalFatG / n,
+            carbG = totalCarbG / n,
+            kcal = totalKcal / n,
+            completeDays = windowDates.size,
+            totalDays = totalDays,
+            targets = targets,
+        )
+    }
+
+    /**
+     * Returns a [WeightProjection] when the user has set a goal weight, or null otherwise.
+     *
+     * [WeightProjection.goalPace] projects arrival using the profile's [UserProfile.goalRateKgPerWeek].
+     * [WeightProjection.currentPace] projects arrival using the recent EMA slope:
+     *   rate = (EMA_today − EMA_(today − tdeeWindowDays)) / tdeeWindowDays kg/day.
+     *
+     * A flat or adverse current pace produces [Projection.Unreachable] for [currentPace].
+     */
+    suspend fun weightProjection(): WeightProjection? = withContext(Dispatchers.IO) {
+        val uid = currentUser.userId()
+        val profileEntity = profileDao.get(uid)
+            ?: throw IllegalStateException("No user profile")
+        val profile = profileEntity.toDomain()
+        val goalKg = profile.goalWeightKg ?: return@withContext null
+
+        val samples = weightDao.getAll(uid).toWeightSamples()
+        val intakeList = foodDao.getActive(uid).toDailyIntake(zone, profile.dayStartHour)
+        val engine = DefaultTdeeEngine(samples, intakeList, profile, zone)
+
+        val now = clock.instant()
+        val currentTrendKg = engine.weightTrendAt(now)
+
+        // Goal pace: use the profile's weekly rate converted to daily.
+        val goalRateKgPerDay = profile.goalRateKgPerWeek / 7.0
+        val goalPace = GoalProjector.projectAtRate(
+            trendNowKg = currentTrendKg,
+            goalKg = goalKg,
+            rateKgPerDay = goalRateKgPerDay,
+            asOf = now,
+            zone = zone,
+        )
+
+        // Current pace: slope of EMA over the last tdeeWindowDays.
+        val today = logDay(now, zone, profile.dayStartHour)
+        val windowStart = today.minusDays(profile.tdeeWindowDays.toLong())
+        val startInstant = windowStart.atStartOfDay(zone).toInstant()
+            .plusSeconds(profile.dayStartHour.toLong() * 3600)
+        val emaToday = engine.weightTrendAt(now)
+        val emaStart = engine.weightTrendAt(startInstant)
+        val currentRateKgPerDay = (emaToday - emaStart) / profile.tdeeWindowDays.toDouble()
+
+        val currentPace = GoalProjector.projectAtRate(
+            trendNowKg = currentTrendKg,
+            goalKg = goalKg,
+            rateKgPerDay = currentRateKgPerDay,
+            asOf = now,
+            zone = zone,
+        )
+
+        WeightProjection(
+            currentTrendKg = currentTrendKg,
+            goalKg = goalKg,
+            goalPace = goalPace,
+            currentPace = currentPace,
+        )
+    }
+
+    // -----------------------------------------------------------------------
+    // Dev / sample-data seeder (for QA and chart development only)
+    // -----------------------------------------------------------------------
+
+    /**
+     * Inserts approximately 60 days of backdated sample data for the current user.
+     * Intended for development and QA use only — call only when BuildConfig.DEBUG is true
+     * at the call site. This method itself has no debug guard so it can be unit-tested.
+     *
+     * Seeded data:
+     *   - 60 daily weight entries: a gentle downward trend starting ~90 kg with ±0.5 kg noise.
+     *   - Food entries on ~80 % of days (random skip, reproducible via fixed seed), each with
+     *     three meals totalling ~2200 kcal/day with a small random variation.
+     *
+     * Timestamps are backdated relative to [clock]'s current instant; day 0 = today,
+     * day 59 = 59 days ago. Weights are recorded at 07:00 local (zone), meals at 08:00,
+     * 13:00, and 19:00.
+     *
+     * Existing data is NOT cleared before seeding — call on a fresh user or wipe manually.
+     */
+    suspend fun seedSampleData() = withContext(Dispatchers.IO) {
+        val uid = currentUser.userId()
+        val profileEntity = profileDao.get(uid)
+            ?: throw IllegalStateException("No user profile")
+        val profile = profileEntity.toDomain()
+
+        val rng = Random(seed = 42L)
+        val today = logDay(clock.instant(), zone, profile.dayStartHour)
+        val totalDays = 60
+        val startWeightKg = 90.0
+        val dailyTrendKg = -0.05 // ~0.35 kg/week loss
+
+        for (dayOffset in (totalDays - 1) downTo 0) {
+            val date = today.minusDays(dayOffset.toLong())
+            val trendWeight = startWeightKg + dailyTrendKg * (totalDays - 1 - dayOffset)
+            val noise = (rng.nextDouble() - 0.5) * 1.0 // ±0.5 kg
+            val weightKg = trendWeight + noise
+
+            val weightTs = date.atStartOfDay(zone).toInstant().plusSeconds(7 * 3600L)
+            weightDao.insert(
+                WeightEntryEntity(
+                    userId = uid,
+                    timestamp = weightTs,
+                    weightKg = weightKg,
+                    source = WeightSource.MANUAL,
+                    createdAt = weightTs,
+                )
+            )
+
+            // Skip food on ~20 % of days to create incomplete-day gaps for testing.
+            if (rng.nextDouble() < 0.80) {
+                val baseKcal = 2200.0 + (rng.nextDouble() - 0.5) * 200.0
+                val mealKcals = listOf(baseKcal * 0.25, baseKcal * 0.40, baseKcal * 0.35)
+                val mealHours = listOf(8L, 13L, 19L)
+
+                for ((kcal, hour) in mealKcals.zip(mealHours)) {
+                    val mealTs = date.atStartOfDay(zone).toInstant().plusSeconds(hour * 3600L)
+                    foodDao.insert(
+                        FoodEntryEntity(
+                            userId = uid,
+                            timestamp = mealTs,
+                            rawText = "sample meal",
+                            name = "Sample Meal",
+                            quantity = 1.0,
+                            unit = "serving",
+                            grams = 300.0,
+                            kcal = kcal,
+                            proteinG = kcal * 0.20 / 4.0,  // 20 % protein
+                            fatG = kcal * 0.30 / 9.0,      // 30 % fat
+                            carbG = kcal * 0.50 / 4.0,     // 50 % carbs
+                            sourceDb = FoodSourceDb.MANUAL,
+                            createdAt = mealTs,
+                            updatedAt = mealTs,
+                        )
+                    )
+                }
+            }
+        }
     }
 }
 

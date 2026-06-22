@@ -27,6 +27,7 @@ fun DashboardScreen(
     viewModel: DashboardViewModel,
     onAddFood: () -> Unit = {},
     onAddWeight: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
 ) {
     val state by viewModel.state.collectAsState()
     val todayFoods by viewModel.todayFoods.collectAsState()
@@ -39,7 +40,14 @@ fun DashboardScreen(
             .padding(horizontal = 16.dp, vertical = 24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text("Dashboard", style = MaterialTheme.typography.headlineSmall)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Dashboard", style = MaterialTheme.typography.headlineSmall)
+            TextButton(onClick = onOpenSettings) { Text("Settings") }
+        }
 
         when (val s = state) {
             is DashboardUiState.Loading -> {

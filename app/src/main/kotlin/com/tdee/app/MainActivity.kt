@@ -4,7 +4,6 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -20,6 +19,8 @@ import com.tdee.app.dashboard.DashboardScreen
 import com.tdee.app.dashboard.DashboardViewModel
 import com.tdee.app.onboarding.OnboardingScreen
 import com.tdee.app.onboarding.OnboardingViewModel
+import com.tdee.app.settings.SettingsScreen
+import com.tdee.app.ui.theme.TdeeTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -27,7 +28,9 @@ class MainActivity : ComponentActivity() {
 
         enableEdgeToEdge()
         setContent {
-            MaterialTheme {
+            val container = (application as TdeeApplication).container
+            val themePreference by container.themeStore.preference.collectAsState()
+            TdeeTheme(preference = themePreference) {
                 Surface {
                     // Collect the profile flow as Compose state.
                     //
@@ -41,7 +44,6 @@ class MainActivity : ComponentActivity() {
                     // After onboarding saves a profile, observeProfile() re-emits the
                     // new entity automatically, Compose recomposes, and the Dashboard
                     // is shown — no manual navigation call needed.
-                    val container = (application as TdeeApplication).container
                     val profile by container.repository.observeProfile()
                         .collectAsState(initial = null)
 
@@ -65,6 +67,16 @@ class MainActivity : ComponentActivity() {
                                         viewModel = vm,
                                         onAddFood = { navController.navigate("add_food") },   // wired for Task B
                                         onAddWeight = { navController.navigate("add_weight") }, // wired for Task C
+                                        onOpenSettings = { navController.navigate("settings") },
+                                    )
+                                }
+
+                                composable("settings") {
+                                    val pref by container.themeStore.preference.collectAsState()
+                                    SettingsScreen(
+                                        current = pref,
+                                        onSelect = { container.themeStore.set(it) },
+                                        onBack = { navController.popBackStack() },
                                     )
                                 }
 
