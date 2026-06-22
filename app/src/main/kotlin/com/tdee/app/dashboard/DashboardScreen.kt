@@ -9,10 +9,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -23,13 +21,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.tdee.app.data.FoodEntryEntity
-import java.util.Locale
 
 @Composable
 fun DashboardScreen(
     viewModel: DashboardViewModel,
-    onAddFood: () -> Unit = {},   // wired for Task B
-    onAddWeight: () -> Unit = {}, // wired for Task C
+    onAddFood: () -> Unit = {},
+    onAddWeight: () -> Unit = {},
 ) {
     val state by viewModel.state.collectAsState()
     val todayFoods by viewModel.todayFoods.collectAsState()
@@ -60,6 +57,20 @@ fun DashboardScreen(
             onAddFood = onAddFood,
             onDelete = { viewModel.deleteFood(it) },
         )
+
+        // Weight logging entry point
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Weight", style = MaterialTheme.typography.titleMedium)
+                TextButton(onClick = onAddWeight) { Text("Log weight") }
+            }
+        }
     }
 }
 
@@ -98,7 +109,7 @@ private fun LoadedContent(s: DashboardUiState.Loaded) {
         modifier = Modifier.padding(horizontal = 4.dp),
     )
 
-    // Today card
+    // Today card — consumed / target calories (reactive)
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("Today", style = MaterialTheme.typography.titleMedium)
@@ -122,27 +133,40 @@ private fun LoadedContent(s: DashboardUiState.Loaded) {
         }
     }
 
-    // Targets card
+    // Macros card — consumed vs target per macro
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("Macro targets", style = MaterialTheme.typography.titleMedium)
-            // Note: per-macro consumed is not available from the repo (DailyIntake carries
-            // total kcal only); displaying targets only, clearly labeled.
-            MacroRow("Protein (target)", s.macroTargets.proteinG, "g")
-            MacroRow("Fat (target)", s.macroTargets.fatG, "g")
-            MacroRow("Carbs (target)", s.macroTargets.carbG, "g")
+            Text("Macros", style = MaterialTheme.typography.titleMedium)
+            MacroRow(
+                label = "Protein",
+                consumed = s.consumedTotals.proteinG,
+                target = s.macroTargets.proteinG.toInt(),
+                unit = "g",
+            )
+            MacroRow(
+                label = "Fat",
+                consumed = s.consumedTotals.fatG,
+                target = s.macroTargets.fatG.toInt(),
+                unit = "g",
+            )
+            MacroRow(
+                label = "Carbs",
+                consumed = s.consumedTotals.carbG,
+                target = s.macroTargets.carbG.toInt(),
+                unit = "g",
+            )
         }
     }
 }
 
 @Composable
-private fun MacroRow(label: String, value: Double, unit: String) {
+private fun MacroRow(label: String, consumed: Int, target: Int, unit: String) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         Text(label, style = MaterialTheme.typography.bodyMedium)
-        Text("%.0f %s".format(value, unit), style = MaterialTheme.typography.bodyMedium)
+        Text("%d / %d %s".format(consumed, target, unit), style = MaterialTheme.typography.bodyMedium)
     }
 }
 

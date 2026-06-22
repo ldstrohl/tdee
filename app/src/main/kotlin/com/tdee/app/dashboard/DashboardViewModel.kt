@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.tdee.app.TdeeApplication
+import com.tdee.app.data.ConsumedMacros
 import com.tdee.app.data.FoodEntryEntity
 import com.tdee.app.data.TdeeRepository
 import com.tdee.domain.Targets
@@ -15,6 +16,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -28,13 +30,18 @@ internal fun kgToLb(kg: Double): Double = kg * 2.2046226
 // UI state
 // ---------------------------------------------------------------------------
 
-/**
- * State exposed by [DashboardViewModel].
- *
- * Limitation: [todayConsumedKcal] reflects total calories only. Per-macro consumed
- * values are not yet available from the repository (DailyIntake only carries total
- * kcal), so [macroTargets] shows targets only — labeled "target" in the UI.
- */
+/** Snapshot of today's consumed macros derived reactively from [todayFoods]. */
+data class ConsumedTotals(
+    val kcal: Int,
+    val proteinG: Int,
+    val fatG: Int,
+    val carbG: Int,
+) {
+    companion object {
+        val Empty = ConsumedTotals(0, 0, 0, 0)
+    }
+}
+
 sealed interface DashboardUiState {
     data object Loading : DashboardUiState
 
@@ -48,11 +55,15 @@ sealed interface DashboardUiState {
         val trendWeightLb: Double,
         /** Calorie target for today in kcal. */
         val calorieTargetKcal: Int,
-        /** Total calories consumed today, or null when no food entries exist for today. */
+        /**
+         * Total calories consumed today derived reactively from todayFoods.
+         * Null when the food list is empty (no entries logged today).
+         */
         val todayConsumedKcal: Int?,
-        /** Macro targets — protein/fat/carb in grams. Today's per-macro consumed is
-         *  not available from the repo; the UI shows targets only. */
+        /** Macro targets — protein/fat/carb in grams. */
         val macroTargets: Targets,
+        /** Consumed macro totals derived reactively from todayFoods. */
+        val consumedTotals: ConsumedTotals,
     ) : DashboardUiState
 }
 
@@ -62,8 +73,8 @@ sealed interface DashboardUiState {
 
 class DashboardViewModel(private val repo: TdeeRepository) : ViewModel() {
 
-    private val _state = MutableStateFlow<DashboardUiState>(DashboardUiState.Loading)
-    val state: StateFlow<DashboardUiState> = _state.asStateFlow()
+    // One-shot state for TDEE/targets/trend (not reactive — these require heavy engine compute).
+    private val _loadedBase = MutableStateFlow<LoadedBase?>(null)
 
     /**
      * Reactive list of today's food entries. Room re-emits on every insert or soft-delete,
@@ -73,6 +84,29 @@ class DashboardViewModel(private val repo: TdeeRepository) : ViewModel() {
      */
     val todayFoods: StateFlow<List<FoodEntryEntity>> = repo.observeTodayFoodEntries()
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /**
+     * The primary UI state, combining the one-shot loaded base with the reactive food list.
+     * Whenever todayFoods emits a new list, consumed totals are re-derived and the state
+     * is updated automatically — no polling or re-navigation needed.
+     */
+    val state: StateFlow<DashboardUiState> = combine(_loadedBase, todayFoods) { base, foods ->
+        if (base == null) {
+            DashboardUiState.Loading
+        } else {
+            val consumed = foods.toConsumedTotals()
+            DashboardUiState.Loaded(
+                tdeeKcal = base.tdeeKcal,
+                tdeeMethod = base.tdeeMethod,
+                calibrating = base.calibrating,
+                trendWeightLb = base.trendWeightLb,
+                calorieTargetKcal = base.calorieTargetKcal,
+                todayConsumedKcal = if (foods.isEmpty()) null else consumed.kcal,
+                macroTargets = base.macroTargets,
+                consumedTotals = consumed,
+            )
+        }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, DashboardUiState.Loading)
 
     init {
         load()
@@ -85,31 +119,25 @@ class DashboardViewModel(private val repo: TdeeRepository) : ViewModel() {
     private fun load() {
         viewModelScope.launch {
             try {
-                // Run independent repo calls concurrently.
                 val estimateDeferred = async { repo.currentEstimate() }
                 val trendKgDeferred = async { repo.currentTrendKg() }
                 val targetsDeferred = async { repo.proposedTargets() }
-                val consumedDeferred = async { repo.todayConsumed() }
 
                 val estimate = estimateDeferred.await()
                 val trendKg = trendKgDeferred.await()
                 val targets = targetsDeferred.await()
-                val consumed = consumedDeferred.await()
 
-                _state.value = DashboardUiState.Loaded(
+                _loadedBase.value = LoadedBase(
                     tdeeKcal = estimate.valueKcal.toInt(),
                     tdeeMethod = estimate.method,
                     calibrating = estimate.calibrating,
                     trendWeightLb = kgToLb(trendKg),
                     calorieTargetKcal = targets.calorieTargetKcal.toInt(),
-                    todayConsumedKcal = consumed?.kcal?.toInt(),
                     macroTargets = targets,
                 )
             } catch (e: Exception) {
-                // If profile is transiently missing or data load fails, stay in Loading.
-                // Routing guarantees a profile exists before this screen is shown, so
-                // this path is a safety net for race conditions only.
-                _state.value = DashboardUiState.Loading
+                // Stay in Loading on error — safety net for race conditions only.
+                _loadedBase.value = null
             }
         }
     }
@@ -127,3 +155,24 @@ class DashboardViewModel(private val repo: TdeeRepository) : ViewModel() {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Intermediate holder for one-shot TDEE/targets data (no food-derived fields). */
+private data class LoadedBase(
+    val tdeeKcal: Int,
+    val tdeeMethod: TdeeMethod,
+    val calibrating: Boolean,
+    val trendWeightLb: Double,
+    val calorieTargetKcal: Int,
+    val macroTargets: Targets,
+)
+
+private fun List<FoodEntryEntity>.toConsumedTotals() = ConsumedTotals(
+    kcal = sumOf { it.kcal }.toInt(),
+    proteinG = sumOf { it.proteinG }.toInt(),
+    fatG = sumOf { it.fatG }.toInt(),
+    carbG = sumOf { it.carbG }.toInt(),
+)

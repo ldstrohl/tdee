@@ -44,9 +44,6 @@ import java.time.ZoneOffset
  * Seed data mirrors the pattern established in TdeeRepositoryTest: 7 weight entries
  * with a slight downward trend, and matching food entries on past log-days. Today's
  * food is injected separately per test.
- *
- * Limitation encoded: per-macro consumed is not available from the repository
- * (DailyIntake carries total kcal only); the ViewModel exposes macro *targets* only.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
@@ -279,6 +276,101 @@ class DashboardViewModelTest {
         assertEquals(freshUserId, afterSave!!.userId)
 
         freshDb.close()
+    }
+
+    // -----------------------------------------------------------------------
+    // 7. consumedTotals — per-macro sums from todayFoods
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `consumedTotals is zero when no food logged today`() = runTest {
+        val vm = DashboardViewModel(repo)
+
+        val loaded = vm.state
+            .filter { it is DashboardUiState.Loaded }
+            .first() as DashboardUiState.Loaded
+
+        assertEquals(ConsumedTotals.Empty, loaded.consumedTotals)
+    }
+
+    @Test
+    fun `consumedTotals matches per-macro sums of today food entries`() = runTest {
+        // Seed two food entries on today's log-day (2026-06-21).
+        // makeFoodEntry uses proteinG=50, fatG=20, carbG=80 per entry.
+        val t1 = Instant.parse("2026-06-21T08:00:00Z")
+        val t2 = Instant.parse("2026-06-21T13:00:00Z")
+        db.foodEntryDao().insert(makeFoodEntry(t1, kcal = 600.0))
+        db.foodEntryDao().insert(makeFoodEntry(t2, kcal = 800.0))
+
+        val vm = DashboardViewModel(repo)
+
+        val loaded = vm.state
+            .filter { it is DashboardUiState.Loaded }
+            .first() as DashboardUiState.Loaded
+
+        // Each entry has proteinG=50, fatG=20, carbG=80, so totals are 2×.
+        assertEquals(100, loaded.consumedTotals.proteinG)
+        assertEquals(40, loaded.consumedTotals.fatG)
+        assertEquals(160, loaded.consumedTotals.carbG)
+        assertEquals(1400, loaded.consumedTotals.kcal)
+    }
+
+    @Test
+    fun `consumedTotals updates reactively after food entry is added`() = runTest {
+        val vm = DashboardViewModel(repo)
+
+        // Wait for initial loaded state (no food today).
+        val initial = vm.state
+            .filter { it is DashboardUiState.Loaded }
+            .first() as DashboardUiState.Loaded
+        assertEquals(ConsumedTotals.Empty, initial.consumedTotals)
+
+        // Add a food entry via the repo directly (simulates what AddFoodViewModel does).
+        repo.addFood(
+            name = "Test",
+            kcal = 500.0,
+            proteinG = 30.0,
+            fatG = 10.0,
+            carbG = 60.0,
+        )
+
+        // The reactive state should now reflect the new entry.
+        val updated = vm.state
+            .filter { s ->
+                s is DashboardUiState.Loaded && s.consumedTotals.kcal > 0
+            }
+            .first() as DashboardUiState.Loaded
+
+        assertEquals(500, updated.consumedTotals.kcal)
+        assertEquals(30, updated.consumedTotals.proteinG)
+        assertEquals(10, updated.consumedTotals.fatG)
+        assertEquals(60, updated.consumedTotals.carbG)
+        assertEquals(500, updated.todayConsumedKcal)
+    }
+
+    @Test
+    fun `todayConsumedKcal becomes null again after all food entries are deleted`() = runTest {
+        // Seed one today food entry.
+        val t1 = Instant.parse("2026-06-21T08:00:00Z")
+        val insertedId = db.foodEntryDao().insert(makeFoodEntry(t1, kcal = 400.0))
+
+        val vm = DashboardViewModel(repo)
+
+        // Wait for entry to appear.
+        val withFood = vm.state
+            .filter { s -> s is DashboardUiState.Loaded && s.todayConsumedKcal != null }
+            .first() as DashboardUiState.Loaded
+        assertEquals(400, withFood.todayConsumedKcal)
+
+        // Soft-delete the entry.
+        vm.deleteFood(insertedId)
+
+        // Consumed should go back to null.
+        val afterDelete = vm.state
+            .filter { s -> s is DashboardUiState.Loaded && s.todayConsumedKcal == null }
+            .first() as DashboardUiState.Loaded
+        assertNull(afterDelete.todayConsumedKcal)
+        assertEquals(ConsumedTotals.Empty, afterDelete.consumedTotals)
     }
 
     // -----------------------------------------------------------------------
