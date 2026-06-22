@@ -17,6 +17,7 @@ import com.tdee.app.addweight.AddWeightScreen
 import com.tdee.app.addweight.AddWeightViewModel
 import com.tdee.app.dashboard.DashboardScreen
 import com.tdee.app.dashboard.DashboardViewModel
+import com.tdee.app.insights.HelpScreen
 import com.tdee.app.insights.InsightsScreen
 import com.tdee.app.insights.InsightsViewModel
 import com.tdee.app.onboarding.OnboardingScreen
@@ -80,7 +81,12 @@ class MainActivity : ComponentActivity() {
                                     InsightsScreen(
                                         viewModel = vm,
                                         onBack = { navController.popBackStack() },
+                                        onHelp = { navController.navigate("help") },
                                     )
+                                }
+
+                                composable("help") {
+                                    HelpScreen(onBack = { navController.popBackStack() })
                                 }
 
                                 composable("settings") {

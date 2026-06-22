@@ -60,6 +60,7 @@ import java.time.temporal.ChronoUnit
 fun InsightsScreen(
     viewModel: InsightsViewModel,
     onBack: () -> Unit,
+    onHelp: () -> Unit = {},
 ) {
     val state by viewModel.state.collectAsState()
 
@@ -78,7 +79,10 @@ fun InsightsScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text("Insights", style = MaterialTheme.typography.headlineSmall)
-            TextButton(onClick = onBack) { Text("Back") }
+            Row {
+                TextButton(onClick = onHelp) { Text("?") }
+                TextButton(onClick = onBack) { Text("Back") }
+            }
         }
 
         // Trend chart section
