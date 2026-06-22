@@ -359,14 +359,21 @@ date of hitting a target weight.
 * **Verify:** exported file opens in a spreadsheet with correct columns and row counts matching
   the DB.
 
-### 8. Weekly Check-in (Target Readjustment)
-**Objective:** The MacroFactor "check-in" — controlled, weekly target updates.
-* **Logic:** once per week, lock the prior 7 days of data, recompute empirical TDEE, and present
-  a proposed new calorie + macro target. User accepts (writes a new `TargetPeriod`) or adjusts.
-  Targets are **immutable within a period** — the app never silently changes recommendations
-  mid-week.
-* **Verify:** accepting a check-in creates a `TargetPeriod` whose targets the dashboard then uses;
-  no target changes occur between check-ins.
+### 8. Check-in (Target Readjustment)
+**Objective:** MacroFactor-style check-in — controlled target updates, but with full user control.
+* **Active targets:** the dashboard's targets come from the most recent `TargetPeriod` (falling back
+  to live `proposedTargets()` until the first check-in exists).
+* **Check-in (two triggers):** recompute empirical TDEE → propose new calorie + macro targets →
+  on accept, write a new `TargetPeriod` **effective immediately**. Triggered either by the **weekly
+  "check-in due" prompt** OR **on-demand by the user at any time** ("Check in now").
+* **Manual override applies immediately:** the user may **edit the calorie/macro target directly at
+  any time** (mid-week) — this takes effect immediately (writes/updates the active `TargetPeriod`).
+  *(Revised from the original "immutable within a period" rule in favor of user control.)*
+* **The invariant kept:** the **app never changes targets on its own** — targets change only via a
+  check-in accept or an explicit user edit. (That's the "no silent drift" intent, preserved.)
+* **Verify:** weekly or on-demand check-in proposes targets and, on accept, creates a `TargetPeriod`
+  the dashboard uses immediately; a manual mid-week target edit takes effect immediately; with no
+  check-in and no user edit, targets never change on their own.
 
 ### 9. Privacy & Local-First Guardrails
 **Objective:** Health data stays on the device by default.
@@ -380,6 +387,24 @@ date of hitting a target weight.
 * **Verify:** with networking disabled, every feature except new-food parsing works; `/parse`
   request payloads contain no biometric data.
 
+### 10. Historical Data Import / Backfill (Pre-seed)
+**Objective:** let a new user import existing history so the empirical TDEE engine has data right away
+and **shortens or skips the ~2-week calibration phase** instead of starting from zero.
+* **Sources:**
+  * **Health Connect weight history** — on connect, pull *existing past* weight records (not just
+    ongoing sync), de-duplicated and backdated to their real timestamps. (Extends Module 3.)
+  * **Intake backfill** — enter previously-tracked calories/macros for past days via a bulk/manual
+    "add for a past date" path (e.g. the ~week a user already logged elsewhere); CSV import is a
+    nice-to-have.
+* **Mechanism:** the engine already consumes backdated entries (timestamps drive log-day + windows +
+  completeness), so imported history flows through EMA / empirical TDEE / calibrating exactly like
+  live data — more complete paired days ⇒ the estimate leaves the calibrating regime sooner. (The
+  debug `seedSampleData()` already proves backdated insertion works end-to-end.)
+* **MVP scope:** manual backfill for past dates (weight + intake) **and** the Health Connect history
+  pull on connect; CSV import deferred.
+* **Verify:** importing N days of past weight + complete intake moves the estimate from
+  formula/blend toward empirical and shrinks the `calibrating` window accordingly.
+
 ---
 
 ## MVP Definition of Done (the core loop, proven)
@@ -389,7 +414,8 @@ date of hitting a target weight.
 4. Dashboard shows EMA trend + TDEE (formula-seeded early, empirical after ~2 weeks).
 5. Goal-projection overlay shows a predicted attainment date for a chosen scenario, and updates
    when the goal/intake/window inputs change.
-6. Weekly check-in proposes and locks new calorie + macro targets.
+6. Check-in (weekly or on-demand) proposes new calorie + macro targets effective on accept; manual
+   target edits apply immediately; the app never changes targets on its own.
 7. Export produces a correct CSV/JSON.
 8. Reinstall restores data via Auto Backup.
 
