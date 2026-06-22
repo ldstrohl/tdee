@@ -105,20 +105,28 @@ Note: the `~/AudiobookWearOS` project (similar Android/Compose setup) drives **p
 `EmulatorReadme.md` are good references for emulator + adb workflows.
 
 ## Status
-Done, committed, tested (121 unit tests green): spec → scaffold → math engine (`:domain`) → Room data
+Done, committed, tested (182 unit tests green): spec → scaffold → math engine (`:domain`) → Room data
 layer → `TdeeRepository` → multi-user seam → app DI/plumbing → onboarding → dashboard → routing →
-**navigation-compose** → **manual food logging** (add-food + reactive today-food list + soft-delete +
-`FoodParser` seam) → **manual weight logging** → **reactive consumed-vs-target dashboard**. The full
-loop (onboard → log food/weight → dashboard updates live) is verified on the `tdee_phone` emulator
-with correct Mifflin–St Jeor math.
+navigation-compose → manual food + weight logging (`FoodParser` seam) → reactive consumed-vs-target
+dashboard → **light/dark/system theming** (`SettingsScreen`, `ThemeStore`, theme-aware `ChartColors`)
+→ **Insights charts** (Module 5 + 4b): **Trend** (raw + 14-day EMA + always-on goal line + toggleable
+Prediction overlay = goal-pace & current-pace projections to goal with dates), **Expenditure** (intake
+bars + measured-TDEE line + deficit-only shading), **Macro donut** (kcal-share ring + consumed-vs-target
+bars, window selector averaging complete days only) → **Help/FAQ** screen. All verified on the
+`tdee_phone` emulator in light & dark.
 
-Layout: `com.tdee.app` → `di/` (AppContainer), `data/` (Room + repository + `FoodParser` seam),
-`onboarding/`, `dashboard/`, `addfood/`, `addweight/`. `MainActivity` = top-level `observeProfile()`
-split (null → onboarding) then a `NavHost` (`dashboard`/`add_food`/`add_weight`). UI ViewModels use
-the `viewModelFactory { initializer { ... } }` + `APPLICATION_KEY` pattern — reuse it. Dashboard
-consumed totals are derived reactively via `combine(_loadedBase, todayFoods)`.
+**Charts are Compose Canvas, not Vico** (full design fidelity, no dep). Geometry/look reference:
+`design/charts.html` + `design/charts_gen.py`. `seedSampleData()` (debug-only button on Insights) loads
+~60 days + a goal so charts/prediction populate in dev.
 
-Not yet built: NL `/parse` proxy + USDA matching (modules 1–2; drops into the `FoodParser` seam),
-Health Connect sync (module 3), Vico charts + goal-projection what-if (5/4b), weekly check-in (8),
-export (7). Note: engine aggregates weight first-of-log-day, so a 2nd same-day weight won't move the
-trend (expected).
+Layout: `com.tdee.app` → `di/`, `data/` (Room + repo + `FoodParser` + `ChartData`), `ui/theme/`
+(`Theme`, `ThemeStore`, `ChartColors`), `onboarding/`, `dashboard/`, `addfood/`, `addweight/`,
+`settings/`, `insights/` (`InsightsScreen`, `InsightsViewModel`, `HelpScreen`). `MainActivity` =
+`observeProfile()` split (null → onboarding) then a `NavHost`
+(`dashboard`/`add_food`/`add_weight`/`settings`/`insights`/`help`). UI ViewModels use the
+`viewModelFactory { initializer { ... } }` + `APPLICATION_KEY` pattern.
+
+Not yet built: NL `/parse` proxy + USDA (modules 1–2 — drops into `FoodParser` seam), Health Connect
+sync (3), weekly check-in (8), export (7). **Known gap:** goal weight is only settable at onboarding
+(optional) — no post-onboarding profile/goal edit yet; needed for real users to use prediction/goal
+features. Note: engine aggregates weight first-of-log-day (a 2nd same-day weigh-in won't move the trend).
