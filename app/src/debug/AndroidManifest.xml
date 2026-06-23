@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+        Debug-only: lets the debug build write sample WeightRecords into Health
+        Connect so the read/import path can be exercised on an empty emulator HC.
+        Release builds never merge this, so production stays read-only.
+    -->
+    <uses-permission android:name="android.permission.health.WRITE_WEIGHT" />
+
+</manifest>

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
@@ -18,6 +19,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.tdee.app.BuildConfig
 import com.tdee.app.ui.theme.ThemePreference
 
 /**
@@ -51,6 +53,8 @@ fun SettingsScreen(
     onEditProfile: () -> Unit = {},
     healthConnectState: HealthConnectUiState = HealthConnectUiState.Loading,
     onHealthConnectTap: () -> Unit = {},
+    debugWriteStatus: String? = null,
+    onDebugWriteSampleWeights: (() -> Unit)? = null,
 ) {
     Column(
         modifier = Modifier
@@ -78,6 +82,23 @@ fun SettingsScreen(
 
         // Health Connect entry
         HealthConnectEntry(state = healthConnectState, onTap = onHealthConnectTap)
+
+        // Debug-only Health Connect test-data writer.
+        if (BuildConfig.DEBUG && onDebugWriteSampleWeights != null) {
+            Button(
+                onClick = onDebugWriteSampleWeights,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Write sample weights to HC (debug)")
+            }
+            if (debugWriteStatus != null) {
+                Text(
+                    debugWriteStatus,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
 
         Text(
             "Theme",

@@ -4,9 +4,13 @@ import android.content.Context
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.WeightRecord
+import androidx.health.connect.client.records.metadata.Metadata
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
+import androidx.health.connect.client.units.Mass
 import java.time.Instant
+import java.time.ZoneId
+import java.time.temporal.ChronoUnit
 
 /**
  * Production implementation of [HealthConnectSource] backed by [HealthConnectClient].
@@ -89,5 +93,41 @@ class RealHealthConnectSource(context: Context) : HealthConnectSource {
                 bodyFatPct = null,
             )
         }
+    }
+
+    /**
+     * DEBUG-ONLY test-data writer.
+     *
+     * Inserts [count] [WeightRecord]s into Health Connect, backdated one per day
+     * over the past [count] days (today, yesterday, …) with a gentle downward
+     * trend starting at 84.0 kg and dropping 0.2 kg per day going back in time —
+     * i.e. the most recent day is the lightest. Each record is a manual entry
+     * with a proper [Metadata], an `Instant` measurement [WeightRecord.time], the
+     * device's current [java.time.ZoneOffset], and [Mass.kilograms].
+     *
+     * Used only by the debug Settings button to seed an otherwise-empty emulator
+     * Health Connect so the read/import path can be verified. Requires the
+     * WRITE_WEIGHT permission (granted via the debug-inclusive Connect request).
+     *
+     * @return the number of records inserted.
+     */
+    suspend fun writeSampleWeights(count: Int = 8): Int {
+        val now = Instant.now().truncatedTo(ChronoUnit.SECONDS)
+        val zone = ZoneId.systemDefault()
+
+        val records = (0 until count).map { daysAgo ->
+            val time = now.minus(daysAgo.toLong(), ChronoUnit.DAYS)
+            val zoneOffset = zone.rules.getOffset(time)
+            val weightKg = 84.0 - daysAgo * 0.2
+            WeightRecord(
+                time = time,
+                zoneOffset = zoneOffset,
+                weight = Mass.kilograms(weightKg),
+                metadata = Metadata.manualEntry(),
+            )
+        }
+
+        client.insertRecords(records)
+        return records.size
     }
 }

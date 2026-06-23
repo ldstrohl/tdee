@@ -10,6 +10,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.health.connect.client.PermissionController
+import com.tdee.app.BuildConfig
 import com.tdee.app.TdeeApplication
 import com.tdee.app.health.HEALTH_CONNECT_PERMISSIONS
 import com.tdee.app.health.HealthConnectSyncWorker
@@ -41,6 +42,9 @@ fun SettingsRoute(
     var hcState by remember {
         mutableStateOf<HealthConnectUiState>(HealthConnectUiState.Loading)
     }
+
+    // Debug-only: confirmation/error text for the sample-weight writer.
+    var debugWriteStatus by remember { mutableStateOf<String?>(null) }
 
     // Permission request contract. On the grant result we re-check and, if granted,
     // run the full-history pre-seed and start the periodic worker.
@@ -105,6 +109,24 @@ fun SettingsRoute(
                 }
                 HealthConnectUiState.Working -> Unit
             }
+        },
+        debugWriteStatus = debugWriteStatus,
+        onDebugWriteSampleWeights = if (BuildConfig.DEBUG) {
+            {
+                debugWriteStatus = "Writing sample weights…"
+                scope.launch {
+                    val result = runCatching { source.writeSampleWeights() }
+                    debugWriteStatus = result.fold(
+                        onSuccess = { n -> "wrote $n sample weights" },
+                        onFailure = { e ->
+                            "couldn't write samples: ${e.message ?: e.javaClass.simpleName}" +
+                                " (is HC connected with write permission?)"
+                        },
+                    )
+                }
+            }
+        } else {
+            null
         },
     )
 }
