@@ -113,7 +113,7 @@ emulator but as `unauthorized` — ignore it; use WSL adb for the emulator.) The
 project's `CLAUDE.md` documents this same WSL/Windows-adb quirk.
 
 ## Status
-Done, committed, tested (244 unit tests green): spec → scaffold → math engine (`:domain`) → Room data
+Done, committed, tested (263 unit tests green): spec → scaffold → math engine (`:domain`) → Room data
 layer → `TdeeRepository` → multi-user seam → app DI/plumbing → onboarding → dashboard → routing →
 navigation-compose → manual food + weight logging (`FoodParser` seam) → reactive consumed-vs-target
 dashboard → **light/dark/system theming** (`SettingsScreen`, `ThemeStore`, theme-aware `ChartColors`)
@@ -124,8 +124,9 @@ bars, window selector averaging complete days only) → **Help/FAQ** screen → 
 (post-onboarding goal/profile edit, Settings) → **date-aware backfill** (log food/weight for past
 dates — Module 10 manual pre-seed) → **Check-in** (Module 8: active `TargetPeriod`, on-demand +
 weekly-due, manual target edits apply immediately) → **Health Connect** (Module 3 + weight-history
-pre-seed): permission flow, Connect-in-Settings, foreground + WorkManager sync. All verified on the
-`tdee_phone` emulator in light & dark.
+pre-seed): permission flow, Connect-in-Settings, foreground + WorkManager sync → **Export** (Module 7:
+per-day CSV dump → Settings share-sheet via FileProvider). All verified on the `tdee_phone` emulator
+in light & dark.
 
 **Charts are Compose Canvas, not Vico** (full design fidelity, no dep). Geometry/look reference:
 `design/charts.html` + `design/charts_gen.py`. `seedSampleData()` (debug-only button on Insights) loads
@@ -138,8 +139,9 @@ Layout: `com.tdee.app` → `di/`, `data/` (Room + repo + `FoodParser` + `ChartDa
 (`dashboard`/`add_food`/`add_weight`/`settings`/`insights`/`help`). UI ViewModels use the
 `viewModelFactory { initializer { ... } }` + `APPLICATION_KEY` pattern.
 
-Not yet built: **export** (Module 7), then NL `/parse` proxy + USDA (modules 1–2 — drops into
-`FoodParser` seam) **last**.
+Not yet built: **NL `/parse` proxy + USDA** (modules 1–2 — drops into the `FoodParser` seam) — the only
+remaining MVP piece. Needs a Cloudflare Worker + API keys + deploy, so only partially verifiable here.
+(Onboarding validation-feedback + Fat-% bugs are now fixed.)
 
 **Health Connect testing (verified path):** HC needs **platform HC (Android 14+ / API 34)** — works on
 the `tdee_phone` emulator. It does NOT work on the Pixel 3 (`REDACTED`, Android 12) — that uses the
