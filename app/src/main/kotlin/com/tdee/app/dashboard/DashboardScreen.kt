@@ -29,6 +29,7 @@ fun DashboardScreen(
     onAddWeight: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onOpenInsights: () -> Unit = {},
+    onCheckin: () -> Unit = {},
 ) {
     val state by viewModel.state.collectAsState()
     val todayFoods by viewModel.todayFoods.collectAsState()
@@ -53,13 +54,21 @@ fun DashboardScreen(
             }
         }
 
+        // Always-available on-demand entry point: check in or edit targets any time.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+        ) {
+            TextButton(onClick = onCheckin) { Text("Check in / adjust targets") }
+        }
+
         when (val s = state) {
             is DashboardUiState.Loading -> {
                 Text("Loading…", style = MaterialTheme.typography.bodyMedium)
             }
 
             is DashboardUiState.Loaded -> {
-                LoadedContent(s)
+                LoadedContent(s, onCheckin)
             }
         }
 
@@ -87,7 +96,30 @@ fun DashboardScreen(
 }
 
 @Composable
-private fun LoadedContent(s: DashboardUiState.Loaded) {
+private fun LoadedContent(s: DashboardUiState.Loaded, onCheckin: () -> Unit) {
+    // Weekly "check-in due" nudge — a clear banner that opens the check-in screen.
+    if (s.checkinDue) {
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Check-in due", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Review your TDEE and update targets.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                TextButton(onClick = onCheckin) { Text("Check in") }
+            }
+        }
+    }
+
     // TDEE card
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {

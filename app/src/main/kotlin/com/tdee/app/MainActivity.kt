@@ -5,8 +5,12 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -15,6 +19,8 @@ import com.tdee.app.addfood.AddFoodScreen
 import com.tdee.app.addfood.AddFoodViewModel
 import com.tdee.app.addweight.AddWeightScreen
 import com.tdee.app.addweight.AddWeightViewModel
+import com.tdee.app.checkin.CheckinScreen
+import com.tdee.app.checkin.CheckinViewModel
 import com.tdee.app.dashboard.DashboardScreen
 import com.tdee.app.dashboard.DashboardViewModel
 import com.tdee.app.editprofile.EditProfileScreen
@@ -68,12 +74,35 @@ class MainActivity : ComponentActivity() {
                                 composable("dashboard") {
                                     val vm: DashboardViewModel =
                                         viewModel(factory = DashboardViewModel.Factory)
+                                    // Reload engine-derived targets/TDEE when the dashboard is
+                                    // resumed (e.g. returning from a check-in or target edit), so
+                                    // the displayed active targets reflect the new period.
+                                    val lifecycleOwner = LocalLifecycleOwner.current
+                                    DisposableEffect(lifecycleOwner) {
+                                        val observer = LifecycleEventObserver { _, event ->
+                                            if (event == Lifecycle.Event.ON_RESUME) vm.reload()
+                                        }
+                                        lifecycleOwner.lifecycle.addObserver(observer)
+                                        onDispose {
+                                            lifecycleOwner.lifecycle.removeObserver(observer)
+                                        }
+                                    }
                                     DashboardScreen(
                                         viewModel = vm,
                                         onAddFood = { navController.navigate("add_food") },
                                         onAddWeight = { navController.navigate("add_weight") },
                                         onOpenSettings = { navController.navigate("settings") },
                                         onOpenInsights = { navController.navigate("insights") },
+                                        onCheckin = { navController.navigate("checkin") },
+                                    )
+                                }
+
+                                composable("checkin") {
+                                    val vm: CheckinViewModel =
+                                        viewModel(factory = CheckinViewModel.Factory)
+                                    CheckinScreen(
+                                        viewModel = vm,
+                                        onDone = { navController.popBackStack() },
                                     )
                                 }
 

@@ -115,6 +115,13 @@ class DashboardViewModel(private val repo: TdeeRepository) : ViewModel() {
         load()
     }
 
+    /**
+     * Re-runs the one-shot TDEE/targets/checkin-due load. Call when returning to the dashboard
+     * after a check-in or manual target edit so the displayed targets reflect the new active
+     * period (the reactive food list updates on its own; these engine-derived values do not).
+     */
+    fun reload() = load()
+
     fun deleteFood(id: Long) {
         viewModelScope.launch { repo.softDeleteFood(id) }
     }
