@@ -18,10 +18,13 @@ views (`WeightSample`, `DailyIntake`, domain `UserProfile`) → runs the engine 
 estimates/targets/projections.
 
 ## Toolchain & versions
-JDK 17 · Gradle 8.9 (wrapper) · AGP 8.5.2 · Kotlin 2.0.20 · KSP 2.0.20-1.0.25 · Compose BOM
-2024.09.00 · Room 2.6.1 · compileSdk/targetSdk **34** (build-tools 34.0.0), minSdk **26** (Health
-Connect). Android SDK at `~/Android/Sdk` (`local.properties` sets `sdk.dir`). No system Gradle — use
+JDK 17 · Gradle 8.11.1 (wrapper) · AGP 8.9.1 · Kotlin 2.0.20 · KSP 2.0.20-1.0.25 · Compose BOM
+2024.09.00 · Room 2.6.1 · **compileSdk 36** / targetSdk **34** (build-tools 34.0.0 + **36.0.0**),
+minSdk **26** · `androidx.health.connect:connect-client` **1.1.0** · `androidx.work:work-runtime-ktx`
+2.9.1. Android SDK at `~/Android/Sdk` (`local.properties` sets `sdk.dir`). No system Gradle — use
 `./gradlew`. Pin versions in `gradle/libs.versions.toml`.
+*(compileSdk was bumped 34→36 + AGP/Gradle bumped so connect-client 1.1.0 — which targets platform
+Health Connect — would work; the old alpha11 client was forced by compileSdk 34 and was incompatible.)*
 
 ## Build & test (run from repo root)
 ```
@@ -110,14 +113,18 @@ emulator but as `unauthorized` — ignore it; use WSL adb for the emulator.) The
 project's `CLAUDE.md` documents this same WSL/Windows-adb quirk.
 
 ## Status
-Done, committed, tested (182 unit tests green): spec → scaffold → math engine (`:domain`) → Room data
+Done, committed, tested (244 unit tests green): spec → scaffold → math engine (`:domain`) → Room data
 layer → `TdeeRepository` → multi-user seam → app DI/plumbing → onboarding → dashboard → routing →
 navigation-compose → manual food + weight logging (`FoodParser` seam) → reactive consumed-vs-target
 dashboard → **light/dark/system theming** (`SettingsScreen`, `ThemeStore`, theme-aware `ChartColors`)
 → **Insights charts** (Module 5 + 4b): **Trend** (raw + 14-day EMA + always-on goal line + toggleable
 Prediction overlay = goal-pace & current-pace projections to goal with dates), **Expenditure** (intake
 bars + measured-TDEE line + deficit-only shading), **Macro donut** (kcal-share ring + consumed-vs-target
-bars, window selector averaging complete days only) → **Help/FAQ** screen. All verified on the
+bars, window selector averaging complete days only) → **Help/FAQ** screen → **Edit Profile**
+(post-onboarding goal/profile edit, Settings) → **date-aware backfill** (log food/weight for past
+dates — Module 10 manual pre-seed) → **Check-in** (Module 8: active `TargetPeriod`, on-demand +
+weekly-due, manual target edits apply immediately) → **Health Connect** (Module 3 + weight-history
+pre-seed): permission flow, Connect-in-Settings, foreground + WorkManager sync. All verified on the
 `tdee_phone` emulator in light & dark.
 
 **Charts are Compose Canvas, not Vico** (full design fidelity, no dep). Geometry/look reference:
@@ -131,7 +138,19 @@ Layout: `com.tdee.app` → `di/`, `data/` (Room + repo + `FoodParser` + `ChartDa
 (`dashboard`/`add_food`/`add_weight`/`settings`/`insights`/`help`). UI ViewModels use the
 `viewModelFactory { initializer { ... } }` + `APPLICATION_KEY` pattern.
 
-Not yet built: NL `/parse` proxy + USDA (modules 1–2 — drops into `FoodParser` seam), Health Connect
-sync (3), weekly check-in (8), export (7). **Known gap:** goal weight is only settable at onboarding
-(optional) — no post-onboarding profile/goal edit yet; needed for real users to use prediction/goal
-features. Note: engine aggregates weight first-of-log-day (a 2nd same-day weigh-in won't move the trend).
+Not yet built: **export** (Module 7), then NL `/parse` proxy + USDA (modules 1–2 — drops into
+`FoodParser` seam) **last**.
+
+**Health Connect testing (verified path):** HC needs **platform HC (Android 14+ / API 34)** — works on
+the `tdee_phone` emulator. It does NOT work on the Pixel 3 (`REDACTED`, Android 12) — that uses the
+*legacy standalone* HC app, which `connect-client 1.1.0` doesn't drive (the permission gateway bounces;
+the app never registers in HC). The user's real device is Android 14+, so production is fine. To verify
+import on the emulator: Settings → Connect Health Connect → tap through HC "Get started" + grant Weight;
+then the debug-only **"Write sample weights to HC"** button (needs WRITE_WEIGHT — grant via
+`adb -s emulator-5554 shell pm grant com.tdee.app android.permission.health.WRITE_WEIGHT`), then Sync →
+"imported N". Re-sync dedups to 0.
+
+**Known bug to fix:** onboarding silently disables "Get started" with no indication of the missing
+required field (a user got stuck because **Sex wasn't selected**), and the **Fat % field "(0–1)"** is
+confusing (users type `25`). Add validation feedback + fix that field. Note: engine aggregates weight
+first-of-log-day (a 2nd same-day weigh-in won't move the trend).
