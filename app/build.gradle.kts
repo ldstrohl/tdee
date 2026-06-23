@@ -76,6 +76,9 @@ dependencies {
     // Health Connect
     implementation(libs.health.connect)
 
+    // WorkManager (periodic HC sync)
+    implementation(libs.androidx.work.runtime.ktx)
+
     // Debug
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)

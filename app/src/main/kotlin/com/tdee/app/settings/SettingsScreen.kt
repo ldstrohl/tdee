@@ -21,7 +21,27 @@ import androidx.compose.ui.unit.dp
 import com.tdee.app.ui.theme.ThemePreference
 
 /**
- * App settings. Currently the theme selector (Light / Dark / System) and an "Edit profile" entry.
+ * One-line status of the Health Connect connection, surfaced in Settings.
+ */
+sealed interface HealthConnectUiState {
+    /** Initial / checking availability. */
+    data object Loading : HealthConnectUiState
+
+    /** HC not installed or needs an update — entry tappable but shows guidance. */
+    data class Unavailable(val message: String) : HealthConnectUiState
+
+    /** HC available, permission not yet granted — tapping requests it. */
+    data object NeedsPermission : HealthConnectUiState
+
+    /** Permission granted; [lastImported] is the most recent sync count, if any. */
+    data class Connected(val lastImported: Int?) : HealthConnectUiState
+
+    /** A sync/permission action is in flight. */
+    data object Working : HealthConnectUiState
+}
+
+/**
+ * App settings. Theme selector, "Edit profile", and the Health Connect connection entry.
  */
 @Composable
 fun SettingsScreen(
@@ -29,6 +49,8 @@ fun SettingsScreen(
     onSelect: (ThemePreference) -> Unit,
     onBack: () -> Unit,
     onEditProfile: () -> Unit = {},
+    healthConnectState: HealthConnectUiState = HealthConnectUiState.Loading,
+    onHealthConnectTap: () -> Unit = {},
 ) {
     Column(
         modifier = Modifier
@@ -54,6 +76,9 @@ fun SettingsScreen(
             Text("Edit profile", style = MaterialTheme.typography.bodyLarge)
         }
 
+        // Health Connect entry
+        HealthConnectEntry(state = healthConnectState, onTap = onHealthConnectTap)
+
         Text(
             "Theme",
             style = MaterialTheme.typography.titleMedium,
@@ -76,6 +101,42 @@ fun SettingsScreen(
                 Text(option.label(), style = MaterialTheme.typography.bodyLarge)
             }
         }
+    }
+}
+
+@Composable
+private fun HealthConnectEntry(
+    state: HealthConnectUiState,
+    onTap: () -> Unit,
+) {
+    // Connected + idle and Working states don't have a primary tap action beyond
+    // "Sync now"; Loading/Unavailable/NeedsPermission all drive the same onTap which
+    // the host interprets based on current state.
+    val enabled = state !is HealthConnectUiState.Working
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .let { if (enabled) it.clickable { onTap() } else it }
+            .padding(vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text("Health Connect", style = MaterialTheme.typography.bodyLarge)
+        val subtitle = when (state) {
+            HealthConnectUiState.Loading -> "Checking availability…"
+            is HealthConnectUiState.Unavailable -> state.message
+            HealthConnectUiState.NeedsPermission -> "Tap to connect and import weight history"
+            HealthConnectUiState.Working -> "Syncing…"
+            is HealthConnectUiState.Connected ->
+                when (val n = state.lastImported) {
+                    null -> "Connected — tap to sync now"
+                    else -> "Connected — imported $n new ${if (n == 1) "entry" else "entries"}. Tap to sync now"
+                }
+        }
+        Text(
+            subtitle,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

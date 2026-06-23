@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        Permissions surfaced to Health Connect on API 34+ via the
+        VIEW_PERMISSION_USAGE activity-alias. Must match the runtime
+        permission set requested in HealthConnectPermissions.kt.
+    -->
+    <array name="health_permissions">
+        <item>android.permission.health.READ_WEIGHT</item>
+    </array>
+</resources>

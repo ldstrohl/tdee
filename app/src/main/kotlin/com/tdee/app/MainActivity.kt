@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -30,7 +31,7 @@ import com.tdee.app.insights.InsightsScreen
 import com.tdee.app.insights.InsightsViewModel
 import com.tdee.app.onboarding.OnboardingScreen
 import com.tdee.app.onboarding.OnboardingViewModel
-import com.tdee.app.settings.SettingsScreen
+import com.tdee.app.settings.SettingsRoute
 import com.tdee.app.ui.theme.TdeeTheme
 
 class MainActivity : ComponentActivity() {
@@ -65,6 +66,19 @@ class MainActivity : ComponentActivity() {
                             OnboardingScreen(viewModel = vm)
                         }
                         else -> {
+                            // Foreground incremental HC sync on app open (only when a
+                            // profile exists, i.e. past onboarding). Resilient: no-ops if
+                            // HC is unavailable or permission was never granted.
+                            LaunchedEffect(Unit) {
+                                val sync = container.healthConnectSyncManager
+                                val src = container.healthConnectSource
+                                runCatching {
+                                    if (src.isAvailable() && src.hasReadPermission()) {
+                                        sync.sync(fullHistory = false)
+                                    }
+                                }
+                            }
+
                             val navController = rememberNavController()
 
                             NavHost(
@@ -122,7 +136,7 @@ class MainActivity : ComponentActivity() {
 
                                 composable("settings") {
                                     val pref by container.themeStore.preference.collectAsState()
-                                    SettingsScreen(
+                                    SettingsRoute(
                                         current = pref,
                                         onSelect = { container.themeStore.set(it) },
                                         onBack = { navController.popBackStack() },

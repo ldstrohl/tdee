@@ -1,0 +1,121 @@
+package com.tdee.app.settings
+
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import androidx.health.connect.client.PermissionController
+import com.tdee.app.TdeeApplication
+import com.tdee.app.health.HEALTH_CONNECT_PERMISSIONS
+import com.tdee.app.health.HealthConnectSyncWorker
+import com.tdee.app.ui.theme.ThemePreference
+import kotlinx.coroutines.launch
+
+/**
+ * Stateful host for the Settings screen.
+ *
+ * Owns the Health Connect orchestration: availability check, the runtime-permission
+ * request (via [PermissionController.createRequestPermissionResultContract]), the
+ * full-history pre-seed sync on first grant, manual "sync now", and enqueueing the
+ * periodic worker once connected. All HC calls are wrapped so a missing/denied HC
+ * never crashes the Settings screen.
+ */
+@Composable
+fun SettingsRoute(
+    current: ThemePreference,
+    onSelect: (ThemePreference) -> Unit,
+    onBack: () -> Unit,
+    onEditProfile: () -> Unit,
+) {
+    val context = LocalContext.current
+    val container = remember { (context.applicationContext as TdeeApplication).container }
+    val source = container.healthConnectSource
+    val syncManager = container.healthConnectSyncManager
+    val scope = rememberCoroutineScope()
+
+    var hcState by remember {
+        mutableStateOf<HealthConnectUiState>(HealthConnectUiState.Loading)
+    }
+
+    // Permission request contract. On the grant result we re-check and, if granted,
+    // run the full-history pre-seed and start the periodic worker.
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = PermissionController.createRequestPermissionResultContract(),
+    ) { granted ->
+        if (granted.containsAll(HEALTH_CONNECT_PERMISSIONS)) {
+            hcState = HealthConnectUiState.Working
+            scope.launch {
+                val imported = runCatching { syncManager.sync(fullHistory = true) }.getOrNull()
+                HealthConnectSyncWorker.enqueue(context)
+                hcState = HealthConnectUiState.Connected(lastImported = imported)
+            }
+        } else {
+            hcState = HealthConnectUiState.NeedsPermission
+        }
+    }
+
+    // Initial availability + permission probe when the screen appears.
+    LaunchedEffect(Unit) {
+        hcState = resolveInitialState(
+            available = runCatching { source.isAvailable() }.getOrDefault(false),
+            granted = runCatching { source.hasReadPermission() }.getOrDefault(false),
+        )
+        if (hcState is HealthConnectUiState.Connected) {
+            HealthConnectSyncWorker.enqueue(context)
+        }
+    }
+
+    SettingsScreen(
+        current = current,
+        onSelect = onSelect,
+        onBack = onBack,
+        onEditProfile = onEditProfile,
+        healthConnectState = hcState,
+        onHealthConnectTap = {
+            when (hcState) {
+                is HealthConnectUiState.Connected -> {
+                    // Manual incremental "sync now".
+                    hcState = HealthConnectUiState.Working
+                    scope.launch {
+                        val imported =
+                            runCatching { syncManager.sync(fullHistory = false) }.getOrNull()
+                        hcState = HealthConnectUiState.Connected(lastImported = imported)
+                    }
+                }
+                HealthConnectUiState.NeedsPermission ->
+                    permissionLauncher.launch(HEALTH_CONNECT_PERMISSIONS)
+                is HealthConnectUiState.Unavailable, HealthConnectUiState.Loading -> {
+                    // Re-probe availability (e.g. user just installed/updated HC).
+                    hcState = HealthConnectUiState.Working
+                    scope.launch {
+                        val available =
+                            runCatching { source.isAvailable() }.getOrDefault(false)
+                        if (available) {
+                            permissionLauncher.launch(HEALTH_CONNECT_PERMISSIONS)
+                            hcState = HealthConnectUiState.NeedsPermission
+                        } else {
+                            hcState = unavailableState()
+                        }
+                    }
+                }
+                HealthConnectUiState.Working -> Unit
+            }
+        },
+    )
+}
+
+private fun resolveInitialState(available: Boolean, granted: Boolean): HealthConnectUiState =
+    when {
+        !available -> unavailableState()
+        granted -> HealthConnectUiState.Connected(lastImported = null)
+        else -> HealthConnectUiState.NeedsPermission
+    }
+
+private fun unavailableState() = HealthConnectUiState.Unavailable(
+    "Health Connect isn't available. Install or update the Health Connect app, then tap to retry.",
+)
