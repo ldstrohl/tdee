@@ -100,9 +100,14 @@ nodes; the submit button may be below the fold — `input swipe` to scroll, then
 Use the emulator for visual sign-off of UI work (agents build + run logic tests; orchestrator
 installs, launches, screenshots, and confirms rendering before committing).
 
-Note: the `~/AudiobookWearOS` project (similar Android/Compose setup) drives **physical** devices
-(Pixel 9a USB, Pixel Watch wifi) via `/usr/bin/adb` and `adb-phone.sh`; its `bridge_claude.sh` /
-`EmulatorReadme.md` are good references for emulator + adb workflows.
+**Physical device (for Health Connect / Withings testing):** WSL2 Linux adb CANNOT see USB devices.
+The phone is reached only through the **Windows adb binary**:
+`/mnt/c/Users/user/AppData/Local/Android/Sdk/platform-tools/adb.exe` (not in PATH — use the full
+path). Current test phone = **Pixel 3, serial `REDACTED`** (Android 12 / API 31; Health Connect is
+an installed app there, fed by Withings). So there are TWO adb worlds: **emulator via WSL adb
+`~/Android/Sdk/platform-tools/adb`**, **phone via `adb.exe -s REDACTED`**. (`adb.exe` also lists the
+emulator but as `unauthorized` — ignore it; use WSL adb for the emulator.) The `~/AudiobookWearOS`
+project's `CLAUDE.md` documents this same WSL/Windows-adb quirk.
 
 ## Status
 Done, committed, tested (182 unit tests green): spec → scaffold → math engine (`:domain`) → Room data
