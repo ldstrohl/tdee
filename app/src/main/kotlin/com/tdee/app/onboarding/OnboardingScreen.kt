@@ -171,8 +171,8 @@ fun OnboardingScreen(viewModel: OnboardingViewModel) {
             OutlinedTextField(
                 value = form.fatPct,
                 onValueChange = viewModel::setFatPct,
-                label = { Text("Fat % (0–1)") },
-                placeholder = { Text("0.25") },
+                label = { Text("Fat (% of calories)") },
+                placeholder = { Text("e.g. 30") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 singleLine = true,
                 modifier = Modifier.weight(1f),
@@ -180,6 +180,14 @@ fun OnboardingScreen(viewModel: OnboardingViewModel) {
         }
 
         Spacer(modifier = Modifier.height(8.dp))
+
+        if (!form.canSave && form.missingRequiredFields.isNotEmpty()) {
+            Text(
+                "Still needed: ${form.missingRequiredFields.joinToString(", ")}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
 
         Button(
             onClick = viewModel::save,

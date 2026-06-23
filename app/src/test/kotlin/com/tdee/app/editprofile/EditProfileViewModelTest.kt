@@ -286,4 +286,82 @@ class EditProfileViewModelTest {
         val isSaved = vm.saved.filter { it }.first()
         assertEquals(true, isSaved)
     }
+
+    // -----------------------------------------------------------------------
+    // 4. Fat % — percent input / fraction storage / prefill
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `prefill shows blank fatPct when stored fraction is default 0_25`() = runTest {
+        db.userProfileDao().upsert(baseProfile) // fatPctOfCalories = 0.25
+
+        val vm = EditProfileViewModel(repo)
+        vm.form.filter { !it.loading }.first()
+
+        assertEquals("", vm.form.value.fatPct)
+    }
+
+    @Test
+    fun `prefill converts stored fraction 0_30 to percent string 30`() = runTest {
+        db.userProfileDao().upsert(baseProfile.copy(fatPctOfCalories = 0.30))
+
+        val vm = EditProfileViewModel(repo)
+        vm.form.filter { !it.loading }.first()
+
+        assertEquals("30", vm.form.value.fatPct)
+    }
+
+    @Test
+    fun `save stores fat percent 35 as fraction 0_35`() = runTest {
+        db.userProfileDao().upsert(baseProfile)
+
+        val vm = EditProfileViewModel(repo)
+        vm.form.filter { !it.loading }.first()
+
+        vm.setFatPct("35")
+        vm.save()
+        vm.saved.filter { it }.first()
+
+        val saved = db.userProfileDao().get(userId)!!
+        assertEquals(0.35, saved.fatPctOfCalories, 0.0001)
+    }
+
+    @Test
+    fun `fatPct out of range 150 makes canSave false`() = runTest {
+        db.userProfileDao().upsert(baseProfile)
+
+        val vm = EditProfileViewModel(repo)
+        vm.form.filter { !it.loading }.first()
+
+        vm.setFatPct("150")
+        assertEquals(false, vm.form.value.canSave)
+    }
+
+    // -----------------------------------------------------------------------
+    // 5. Missing required fields
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `missingRequiredFields lists Height when height is cleared`() = runTest {
+        db.userProfileDao().upsert(baseProfile)
+
+        val vm = EditProfileViewModel(repo)
+        vm.form.filter { !it.loading }.first()
+
+        vm.setHeightFt("")
+        val missing = vm.form.value.missingRequiredFields
+        assertEquals(true, "Height" in missing)
+        assertEquals(false, vm.form.value.canSave)
+    }
+
+    @Test
+    fun `missingRequiredFields is empty for a fully prefilled profile`() = runTest {
+        db.userProfileDao().upsert(baseProfile)
+
+        val vm = EditProfileViewModel(repo)
+        vm.form.filter { !it.loading }.first()
+
+        assertEquals(emptyList<String>(), vm.form.value.missingRequiredFields)
+        assertEquals(true, vm.form.value.canSave)
+    }
 }

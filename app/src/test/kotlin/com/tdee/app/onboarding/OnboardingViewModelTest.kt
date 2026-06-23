@@ -166,8 +166,50 @@ class OnboardingViewModelTest {
     @Test
     fun `canSave is false when fat pct override is out of range`() {
         fillRequiredFields()
-        vm.setFatPct("1.5")
+        vm.setFatPct("150") // percent input, >100 is invalid
         assertFalse(vm.form.value.canSave)
+    }
+
+    @Test
+    fun `fatPct percent input converts to 0 to 1 fraction`() {
+        fillRequiredFields()
+        vm.setFatPct("30")
+        assertEquals(0.30, vm.form.value.fatPctDouble!!, 0.0001)
+    }
+
+    @Test
+    fun `fatPct blank uses default fraction 0_25`() {
+        fillRequiredFields()
+        vm.setFatPct("")
+        assertEquals(0.25, vm.form.value.fatPctDouble!!, 0.0001)
+    }
+
+    @Test
+    fun `missingRequiredFields lists sex when sex not selected`() {
+        fillRequiredFields(sex = false)
+        val missing = vm.form.value.missingRequiredFields
+        assertTrue("Biological sex" in missing)
+        assertFalse(vm.form.value.canSave)
+    }
+
+    @Test
+    fun `missingRequiredFields is empty when all required fields set`() {
+        fillRequiredFields()
+        assertTrue(vm.form.value.missingRequiredFields.isEmpty())
+        assertTrue(vm.form.value.canSave)
+    }
+
+    @Test
+    fun `save stores fat percent 30 as fraction 0_30`() = runTest {
+        fillRequiredFields()
+        vm.setFatPct("30")
+
+        vm.save()
+        vm.saved.filter { it }.first()
+
+        val saved = db.userProfileDao().get(userId)
+        assertNotNull(saved)
+        assertEquals(0.30, saved!!.fatPctOfCalories, 0.0001)
     }
 
     // -----------------------------------------------------------------------

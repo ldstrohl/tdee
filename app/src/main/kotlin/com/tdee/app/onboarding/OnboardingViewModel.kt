@@ -49,7 +49,7 @@ data class OnboardingFormState(
     val goalWeightLb: String = "",
     /** Optional override; g/kg. Empty = use default 2.0 */
     val proteinGPerKg: String = "",
-    /** Optional override; 0..1. Empty = use default 0.25 */
+    /** Optional override; whole percent 0..100. Empty = use default 25%. Stored as 0..1 fraction. */
     val fatPct: String = "",
 ) {
     // -----------------------------------------------------------------------
@@ -78,19 +78,27 @@ data class OnboardingFormState(
         return proteinGPerKg.toDoubleOrNull()?.takeIf { it > 0 }
     }
 
+    /** Input is a whole percent (0..100); returns the stored 0..1 fraction. */
     val fatPctDouble: Double? get() {
         if (fatPct.isBlank()) return 0.25 // default
-        return fatPct.toDoubleOrNull()?.takeIf { it in 0.0..1.0 }
+        return fatPct.toDoubleOrNull()?.takeIf { it in 0.0..100.0 }?.let { it / 100.0 }
+    }
+
+    /**
+     * Human-readable names of required fields that are not yet validly filled.
+     * Empty when the form is complete. Drives the "Still needed: …" helper line.
+     */
+    val missingRequiredFields: List<String> get() = buildList {
+        if (sex == null) add("Biological sex")
+        if (birthYearInt == null) add("Birth year")
+        if (heightFtInt == null || heightInInt == null) add("Height")
+        if (currentWeightLbDouble == null) add("Current weight")
+        if (activityLevel == null) add("Activity level")
+        if (goalRateLbPerWeekDouble == null) add("Goal rate")
     }
 
     val canSave: Boolean get() =
-        sex != null &&
-        birthYearInt != null &&
-        heightFtInt != null &&
-        heightInInt != null &&
-        currentWeightLbDouble != null &&
-        activityLevel != null &&
-        goalRateLbPerWeekDouble != null &&
+        missingRequiredFields.isEmpty() &&
         proteinGPerKgDouble != null &&
         fatPctDouble != null
 }
