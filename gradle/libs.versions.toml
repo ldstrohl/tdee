@@ -14,6 +14,7 @@ junit5 = "5.10.3"
 robolectric = "4.13"
 coroutinesTest = "1.8.1"
 navigationCompose = "2.8.0"
+healthConnect = "1.0.0-alpha11"
 
 [libraries]
 # AndroidX
@@ -39,6 +40,7 @@ room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
 room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
 room-testing = { group = "androidx.room", name = "room-testing", version.ref = "room" }
 androidx-navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigationCompose" }
+health-connect = { group = "androidx.health.connect", name = "connect-client", version.ref = "healthConnect" }
 
 # Test
 junit = { group = "junit", name = "junit", version.ref = "junit" }
