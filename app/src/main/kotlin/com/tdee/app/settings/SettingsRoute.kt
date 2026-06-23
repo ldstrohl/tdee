@@ -1,5 +1,7 @@
 package com.tdee.app.settings
 
+import android.content.Intent
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -9,13 +11,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.FileProvider
 import androidx.health.connect.client.PermissionController
 import com.tdee.app.BuildConfig
 import com.tdee.app.TdeeApplication
 import com.tdee.app.health.HEALTH_CONNECT_PERMISSIONS
 import com.tdee.app.health.HealthConnectSyncWorker
 import com.tdee.app.ui.theme.ThemePreference
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 /**
  * Stateful host for the Settings screen.
@@ -37,6 +45,7 @@ fun SettingsRoute(
     val container = remember { (context.applicationContext as TdeeApplication).container }
     val source = container.healthConnectSource
     val syncManager = container.healthConnectSyncManager
+    val repository = container.repository
     val scope = rememberCoroutineScope()
 
     var hcState by remember {
@@ -80,6 +89,39 @@ fun SettingsRoute(
         onBack = onBack,
         onEditProfile = onEditProfile,
         healthConnectState = hcState,
+        onExportData = {
+            scope.launch {
+                val csv = runCatching { repository.exportCsv() }.getOrNull()
+                // A header-only CSV (no data rows) means nothing to export.
+                val hasRows = csv != null && csv.trim().lines().size > 1
+                if (csv == null || !hasRows) {
+                    Toast.makeText(context, "No data to export yet", Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+                val uri = runCatching {
+                    val exportDir = File(context.cacheDir, "export").apply { mkdirs() }
+                    val stamp = java.time.LocalDate.now(ZoneId.systemDefault())
+                        .format(DateTimeFormatter.BASIC_ISO_DATE) // YYYYMMDD
+                    val file = File(exportDir, "tdee-export-$stamp.csv")
+                    withContext(Dispatchers.IO) { file.writeText(csv) }
+                    FileProvider.getUriForFile(
+                        context,
+                        "${context.packageName}.fileprovider",
+                        file,
+                    )
+                }.getOrNull()
+                if (uri == null) {
+                    Toast.makeText(context, "Couldn't prepare export", Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+                val send = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/csv"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                context.startActivity(Intent.createChooser(send, "Export TDEE data"))
+            }
+        },
         onHealthConnectTap = {
             when (hcState) {
                 is HealthConnectUiState.Connected -> {

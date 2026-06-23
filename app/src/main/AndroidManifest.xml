@@ -57,6 +57,16 @@
                 android:name="health_permissions"
                 android:resource="@array/health_permissions" />
         </activity-alias>
+        <!-- Module 7: share exported CSV from cacheDir/export via a content URI. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 
 </manifest>

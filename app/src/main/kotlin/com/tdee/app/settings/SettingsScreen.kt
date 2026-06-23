@@ -53,6 +53,7 @@ fun SettingsScreen(
     onEditProfile: () -> Unit = {},
     healthConnectState: HealthConnectUiState = HealthConnectUiState.Loading,
     onHealthConnectTap: () -> Unit = {},
+    onExportData: () -> Unit = {},
     debugWriteStatus: String? = null,
     onDebugWriteSampleWeights: (() -> Unit)? = null,
 ) {
@@ -82,6 +83,22 @@ fun SettingsScreen(
 
         // Health Connect entry
         HealthConnectEntry(state = healthConnectState, onTap = onHealthConnectTap)
+
+        // Export data entry — dumps history to CSV and opens the Android share sheet.
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onExportData() }
+                .padding(vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text("Export data", style = MaterialTheme.typography.bodyLarge)
+            Text(
+                "Share a CSV of your weight, calories, macros, and TDEE",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
 
         // Debug-only Health Connect test-data writer.
         if (BuildConfig.DEBUG && onDebugWriteSampleWeights != null) {

@@ -607,6 +607,98 @@ class TdeeRepository(
         result
     }
 
+    // -----------------------------------------------------------------------
+    // Export (Module 7)
+    // -----------------------------------------------------------------------
+
+    /**
+     * Builds a CSV data dump for the current user: a header row documenting units,
+     * then one row per log-day over the union of all dates that have any data
+     * (weight measurements, smoothed weight, or food entries), sorted ascending.
+     *
+     * Columns:
+     *   date, weight_lb, smoothed_weight_lb, calories_kcal, protein_g, fat_g, carb_g, tdee_kcal
+     *
+     *   - weight_lb           that day's raw (first-of-day) weight kg→lb, blank if none that day.
+     *   - smoothed_weight_lb  the engine EMA kg→lb for that day.
+     *   - calories_kcal /
+     *     protein_g / fat_g /
+     *     carb_g              sums of that day's non-deleted food entries; blank when the day had
+     *                          no entries (never 0 for unlogged days).
+     *   - tdee_kcal           the day's TDEE estimate from the engine.
+     *
+     * Weights are rounded to 1 dp; kcal and grams to whole numbers. Values are numeric / ISO dates,
+     * so no quoting is required, but the output is valid CSV.
+     *
+     * Empty case: header row only when there is no data for the user (or no profile).
+     */
+    suspend fun exportCsv(): String = withContext(Dispatchers.IO) {
+        val header =
+            "date,weight_lb,smoothed_weight_lb,calories_kcal,protein_g,fat_g,carb_g,tdee_kcal"
+
+        val uid = currentUser.userId()
+        val profileEntity = profileDao.get(uid) ?: return@withContext header + "\n"
+        val profile = profileEntity.toDomain()
+
+        val weightEntities = weightDao.getAll(uid)
+        val foodEntities = foodDao.getActive(uid).filter { it.deletedAt == null }
+
+        if (weightEntities.isEmpty() && foodEntities.isEmpty()) {
+            return@withContext header + "\n"
+        }
+
+        // First-of-day raw weight (kg), same bucketing the engine/weightSeries use.
+        val rawByDay: Map<LocalDate, Double> = weightEntities
+            .groupBy { logDay(it.timestamp, zone, profile.dayStartHour) }
+            .mapValues { (_, entries) -> entries.minBy { it.timestamp }.weightKg }
+
+        // Per-day food macro sums, aggregated by the shared logDay rule.
+        data class MacroSum(val kcal: Double, val proteinG: Double, val fatG: Double, val carbG: Double)
+        val macrosByDay: Map<LocalDate, MacroSum> = foodEntities
+            .groupBy { logDay(it.timestamp, zone, profile.dayStartHour) }
+            .mapValues { (_, entries) ->
+                MacroSum(
+                    kcal = entries.sumOf { it.kcal },
+                    proteinG = entries.sumOf { it.proteinG },
+                    fatG = entries.sumOf { it.fatG },
+                    carbG = entries.sumOf { it.carbG },
+                )
+            }
+
+        // Engine for EMA + TDEE per day (kg-based domain).
+        val samples = weightEntities.toWeightSamples()
+        val intake = foodEntities.toDailyIntake(zone, profile.dayStartHour)
+        val engine = DefaultTdeeEngine(samples, intake, profile, zone)
+
+        val dates = (rawByDay.keys + macrosByDay.keys).toSortedSet()
+
+        val kgToLb = 2.2046226
+        fun num1(v: Double) = String.format(java.util.Locale.US, "%.1f", v)
+        fun whole(v: Double) = Math.round(v).toString()
+
+        val sb = StringBuilder(header).append("\n")
+        for (date in dates) {
+            val dayInstant = date.atStartOfDay(zone).toInstant()
+                .plusSeconds(profile.dayStartHour.toLong() * 3600)
+            val emaKg = engine.weightTrendAt(dayInstant)
+            val tdee = engine.estimateAt(dayInstant).valueKcal
+
+            val rawKg = rawByDay[date]
+            val macros = macrosByDay[date]
+
+            sb.append(date.toString()).append(',')
+                .append(if (rawKg != null) num1(rawKg * kgToLb) else "").append(',')
+                .append(num1(emaKg * kgToLb)).append(',')
+                .append(if (macros != null) whole(macros.kcal) else "").append(',')
+                .append(if (macros != null) whole(macros.proteinG) else "").append(',')
+                .append(if (macros != null) whole(macros.fatG) else "").append(',')
+                .append(if (macros != null) whole(macros.carbG) else "").append(',')
+                .append(whole(tdee))
+                .append('\n')
+        }
+        sb.toString()
+    }
+
     /**
      * Returns macro and calorie summary for the given [window].
      *
