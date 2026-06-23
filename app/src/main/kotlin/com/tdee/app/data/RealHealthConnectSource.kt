@@ -45,9 +45,11 @@ class RealHealthConnectSource(context: Context) : HealthConnectSource {
         HealthConnectClient.getOrCreate(appContext)
     }
 
-    // DEVICE-VERIFICATION-PENDING: SDK_AVAILABLE = 3 in the alpha11 SDK constants.
+    // DEVICE-VERIFICATION-PENDING: SDK_AVAILABLE = 3 in the SDK constants.
+    // connect-client 1.1.0 exposes this as the function getSdkStatus(context)
+    // (the `sdkStatus` property accessor from alpha11 was removed).
     override suspend fun isAvailable(): Boolean =
-        HealthConnectClient.sdkStatus(appContext) == HealthConnectClient.SDK_AVAILABLE
+        HealthConnectClient.getSdkStatus(appContext) == HealthConnectClient.SDK_AVAILABLE
 
     // DEVICE-VERIFICATION-PENDING: getGrantedPermissions returns Set<String>;
     // each entry is the string permission name (e.g. "android.permission.health.READ_WEIGHT").

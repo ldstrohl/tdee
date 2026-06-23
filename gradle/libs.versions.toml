@@ -1,5 +1,5 @@
 [versions]
-agp = "8.5.2"
+agp = "8.9.1"
 kotlin = "2.0.20"
 ksp = "2.0.20-1.0.25"
 coreKtx = "1.13.1"
@@ -14,7 +14,7 @@ junit5 = "5.10.3"
 robolectric = "4.13"
 coroutinesTest = "1.8.1"
 navigationCompose = "2.8.0"
-healthConnect = "1.0.0-alpha11"
+healthConnect = "1.1.0"
 work = "2.9.1"
 
 [libraries]
