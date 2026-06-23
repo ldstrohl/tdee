@@ -14,6 +14,18 @@ interface TargetPeriodDao {
     @Query("SELECT * FROM target_period WHERE userId = :userId ORDER BY startDate ASC")
     suspend fun getAll(userId: String): List<TargetPeriodEntity>
 
+    /**
+     * Most recent target period for [userId], or null if none exists.
+     * Ordered latest-first by startDate, with acceptedAt as the tie-break so that
+     * two periods sharing a startDate (e.g. a same-day manual edit after a check-in)
+     * resolve to the one accepted most recently.
+     */
+    @Query(
+        "SELECT * FROM target_period WHERE userId = :userId " +
+            "ORDER BY startDate DESC, acceptedAt DESC LIMIT 1"
+    )
+    suspend fun getLatest(userId: String): TargetPeriodEntity?
+
     @Query("DELETE FROM target_period WHERE id = :id")
     suspend fun deleteById(id: Long)
 

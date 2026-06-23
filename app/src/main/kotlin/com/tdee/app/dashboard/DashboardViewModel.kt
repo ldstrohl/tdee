@@ -64,6 +64,8 @@ sealed interface DashboardUiState {
         val macroTargets: Targets,
         /** Consumed macro totals derived reactively from todayFoods. */
         val consumedTotals: ConsumedTotals,
+        /** True when a weekly check-in is due (no period yet, or latest ≥ 7 days old). */
+        val checkinDue: Boolean,
     ) : DashboardUiState
 }
 
@@ -104,6 +106,7 @@ class DashboardViewModel(private val repo: TdeeRepository) : ViewModel() {
                 todayConsumedKcal = if (foods.isEmpty()) null else consumed.kcal,
                 macroTargets = base.macroTargets,
                 consumedTotals = consumed,
+                checkinDue = base.checkinDue,
             )
         }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, DashboardUiState.Loading)
@@ -121,11 +124,13 @@ class DashboardViewModel(private val repo: TdeeRepository) : ViewModel() {
             try {
                 val estimateDeferred = async { repo.currentEstimate() }
                 val trendKgDeferred = async { repo.currentTrendKg() }
-                val targetsDeferred = async { repo.proposedTargets() }
+                val targetsDeferred = async { repo.activeTargets() }
+                val checkinDueDeferred = async { repo.checkinDue() }
 
                 val estimate = estimateDeferred.await()
                 val trendKg = trendKgDeferred.await()
                 val targets = targetsDeferred.await()
+                val checkinDue = checkinDueDeferred.await()
 
                 _loadedBase.value = LoadedBase(
                     tdeeKcal = estimate.valueKcal.toInt(),
@@ -134,6 +139,7 @@ class DashboardViewModel(private val repo: TdeeRepository) : ViewModel() {
                     trendWeightLb = kgToLb(trendKg),
                     calorieTargetKcal = targets.calorieTargetKcal.toInt(),
                     macroTargets = targets,
+                    checkinDue = checkinDue,
                 )
             } catch (e: Exception) {
                 // Stay in Loading on error — safety net for race conditions only.
@@ -168,6 +174,7 @@ private data class LoadedBase(
     val trendWeightLb: Double,
     val calorieTargetKcal: Int,
     val macroTargets: Targets,
+    val checkinDue: Boolean,
 )
 
 private fun List<FoodEntryEntity>.toConsumedTotals() = ConsumedTotals(

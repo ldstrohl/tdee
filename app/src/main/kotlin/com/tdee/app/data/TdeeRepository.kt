@@ -36,6 +36,7 @@ class TdeeRepository(
     private val profileDao: UserProfileDao,
     private val weightDao: WeightEntryDao,
     private val foodDao: FoodEntryDao,
+    private val targetDao: TargetPeriodDao,
     private val trendCacheDao: WeightTrendCacheDao,
     private val currentUser: CurrentUser,
     private val zone: ZoneId = ZoneId.systemDefault(),
@@ -88,6 +89,117 @@ class TdeeRepository(
         val trendKg = engine.weightTrendAt(now)
         TargetCalculator.targets(estimate, trendKg, profile)
     }
+
+    // -----------------------------------------------------------------------
+    // Check-in (Module 8): active targets, due check, proposal, commit
+    // -----------------------------------------------------------------------
+
+    /**
+     * The targets the dashboard should display: the most recent [TargetPeriodEntity] for the
+     * current user (latest by `startDate`, tie-broken by `acceptedAt`) mapped to [Targets].
+     *
+     * Falls back to the live [proposedTargets] when the user has no period yet — i.e. before the
+     * first check-in or manual edit exists, the dashboard shows what the engine recommends.
+     */
+    suspend fun activeTargets(): Targets = withContext(Dispatchers.IO) {
+        val uid = currentUser.userId()
+        targetDao.getLatest(uid)?.toTargets() ?: proposedTargets()
+    }
+
+    /**
+     * Whether a weekly check-in is due. True when:
+     *   - the user has no target period yet (never checked in), OR
+     *   - the latest period's `startDate` is ≥ 7 days before today's log-day.
+     *
+     * Drives the weekly "check-in due" prompt; the app never acts on this on its own — it only
+     * surfaces the flag for the user to accept.
+     */
+    suspend fun checkinDue(): Boolean = withContext(Dispatchers.IO) {
+        val uid = currentUser.userId()
+        val latest = targetDao.getLatest(uid) ?: return@withContext true
+        val profileEntity = profileDao.get(uid)
+            ?: throw IllegalStateException("No user profile")
+        val today = logDay(clock.instant(), zone, profileEntity.dayStartHour)
+        !latest.startDate.isAfter(today.minusDays(7))
+    }
+
+    /**
+     * Builds the read-model a check-in screen shows: current TDEE, a 7-day summary
+     * (avg complete-day intake + EMA trend change in lb), the active period's targets (or null),
+     * and the live engine-proposed targets.
+     *
+     * The 7-day window matches the engine's convention: it ends the day BEFORE today's log-day
+     * (the in-progress day is excluded). `last7AvgIntakeKcal` averages COMPLETE intake days in
+     * `[today-7 .. today-1]`; `trendChangeLb` is EMA(today) − EMA(today − 7 days) converted to lb.
+     */
+    suspend fun proposeCheckin(): CheckinProposal = withContext(Dispatchers.IO) {
+        val uid = currentUser.userId()
+        val (engine, profile) = buildEngine()
+        val now = clock.instant()
+        val estimate = engine.estimateAt(now)
+        val trendKg = engine.weightTrendAt(now)
+        val proposed = TargetCalculator.targets(estimate, trendKg, profile)
+
+        val today = logDay(now, zone, profile.dayStartHour)
+        val windowEnd = today.minusDays(1)
+        val windowStart = windowEnd.minusDays(6) // 7 inclusive log-days
+
+        val intakeList = foodDao.getActive(uid).toDailyIntake(zone, profile.dayStartHour)
+        val completeKcals = intakeList.filter {
+            it.complete && !it.date.isBefore(windowStart) && !it.date.isAfter(windowEnd)
+        }.map { it.kcal }
+        val last7AvgIntakeKcal = if (completeKcals.isEmpty()) null else completeKcals.average()
+
+        // EMA change over the last 7 days (lb): trend now minus trend a week ago.
+        val sevenDaysAgo = now.minusSeconds(7 * 24 * 3600L)
+        val trendChangeKg = engine.weightTrendAt(now) - engine.weightTrendAt(sevenDaysAgo)
+        val trendChangeLb = trendChangeKg * 2.2046226
+
+        val current = targetDao.getLatest(uid)?.toTargets()
+
+        CheckinProposal(
+            tdeeKcal = estimate.valueKcal,
+            calibrating = estimate.calibrating,
+            last7AvgIntakeKcal = last7AvgIntakeKcal,
+            trendChangeLb = trendChangeLb,
+            currentTargets = current,
+            proposedTargets = proposed,
+        )
+    }
+
+    /**
+     * Writes a NEW active target period for the current user, effective immediately (it becomes
+     * the period [activeTargets] returns and flips [checkinDue] to false).
+     *
+     * This is the single write path shared by BOTH check-in flows:
+     *   - "Accept check-in" (weekly or on-demand) passes the proposed targets, and
+     *   - "Manual target edit" passes the user-edited targets.
+     * Both take effect immediately — there is no in-period immutability. The app never calls this
+     * on its own; it only runs in response to an explicit user accept or edit.
+     *
+     * The new period spans `[today, today + 7 days]`, records [tdeeAtCheckinKcal] as the immutable
+     * snapshot of what we believed when targets were set, and stamps `acceptedAt = clock.instant()`.
+     */
+    suspend fun commitTargets(targets: Targets, tdeeAtCheckinKcal: Double) =
+        withContext(Dispatchers.IO) {
+            val uid = currentUser.userId()
+            val profileEntity = profileDao.get(uid)
+                ?: throw IllegalStateException("No user profile")
+            val today = logDay(clock.instant(), zone, profileEntity.dayStartHour)
+            targetDao.insert(
+                TargetPeriodEntity(
+                    userId = uid,
+                    startDate = today,
+                    endDate = today.plusDays(7),
+                    tdeeAtCheckin = tdeeAtCheckinKcal,
+                    calorieTarget = targets.calorieTargetKcal,
+                    proteinTargetG = targets.proteinG,
+                    fatTargetG = targets.fatG,
+                    carbTargetG = targets.carbG,
+                    acceptedAt = clock.instant(),
+                )
+            )
+        }
 
     /**
      * Projects when [goalKg] is reached at [scenarioIntakeKcal] daily intake.

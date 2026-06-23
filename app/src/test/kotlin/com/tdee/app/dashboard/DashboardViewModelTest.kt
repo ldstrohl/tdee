@@ -101,6 +101,7 @@ class DashboardViewModelTest {
             profileDao = db.userProfileDao(),
             weightDao = db.weightEntryDao(),
             foodDao = db.foodEntryDao(),
+            targetDao = db.targetPeriodDao(),
             trendCacheDao = db.weightTrendCacheDao(),
             currentUser = fakeCurrentUser,
             zone = zone,
@@ -252,6 +253,7 @@ class DashboardViewModelTest {
             profileDao = freshDb.userProfileDao(),
             weightDao = freshDb.weightEntryDao(),
             foodDao = freshDb.foodEntryDao(),
+            targetDao = freshDb.targetPeriodDao(),
             trendCacheDao = freshDb.weightTrendCacheDao(),
             currentUser = CurrentUser { freshUserId },
             zone = zone,
@@ -371,6 +373,48 @@ class DashboardViewModelTest {
             .first() as DashboardUiState.Loaded
         assertNull(afterDelete.todayConsumedKcal)
         assertEquals(ConsumedTotals.Empty, afterDelete.consumedTotals)
+    }
+
+    // -----------------------------------------------------------------------
+    // 8. Active targets + checkinDue (Module 8)
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `targets reflect the active period after a commit, not the live proposed value`() = runTest {
+        // Commit an arbitrary target period; the dashboard should use it verbatim.
+        val committed = com.tdee.domain.Targets(
+            calorieTargetKcal = 1850.0,
+            proteinG = 175.0,
+            fatG = 55.0,
+            carbG = 150.0,
+        )
+        repo.commitTargets(committed, tdeeAtCheckinKcal = 2400.0)
+
+        val vm = DashboardViewModel(repo)
+        val loaded = vm.state
+            .filter { it is DashboardUiState.Loaded }
+            .first() as DashboardUiState.Loaded
+
+        assertEquals(1850, loaded.calorieTargetKcal)
+        assertEquals(committed, loaded.macroTargets)
+    }
+
+    @Test
+    fun `checkinDue is true with no period and false right after a commit`() = runTest {
+        // No period yet → due.
+        val vmDue = DashboardViewModel(repo)
+        val due = vmDue.state
+            .filter { it is DashboardUiState.Loaded }
+            .first() as DashboardUiState.Loaded
+        assertTrue("checkinDue should be true with no period yet", due.checkinDue)
+
+        // After committing a period dated today → not due.
+        repo.commitTargets(repo.proposedTargets(), tdeeAtCheckinKcal = 2400.0)
+        val vmNotDue = DashboardViewModel(repo)
+        val notDue = vmNotDue.state
+            .filter { it is DashboardUiState.Loaded }
+            .first() as DashboardUiState.Loaded
+        assertTrue("checkinDue should be false right after a commit", !notDue.checkinDue)
     }
 
     // -----------------------------------------------------------------------

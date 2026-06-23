@@ -43,6 +43,7 @@ class AppContainer(context: Context) {
             profileDao = profileDao,
             weightDao = weightDao,
             foodDao = foodDao,
+            targetDao = targetPeriodDao,
             trendCacheDao = trendCacheDao,
             currentUser = currentUser,
         )
