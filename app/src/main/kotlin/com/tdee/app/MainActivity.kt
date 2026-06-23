@@ -18,6 +18,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.tdee.app.addfood.AddFoodScreen
 import com.tdee.app.addfood.AddFoodViewModel
+import com.tdee.app.addfood.ParseConfirmScreen
+import com.tdee.app.addfood.ParseConfirmViewModel
 import com.tdee.app.addweight.AddWeightScreen
 import com.tdee.app.addweight.AddWeightViewModel
 import com.tdee.app.checkin.CheckinScreen
@@ -104,6 +106,7 @@ class MainActivity : ComponentActivity() {
                                     DashboardScreen(
                                         viewModel = vm,
                                         onAddFood = { navController.navigate("add_food") },
+                                        onLogText = { navController.navigate("log_text") },
                                         onAddWeight = { navController.navigate("add_weight") },
                                         onOpenSettings = { navController.navigate("settings") },
                                         onOpenInsights = { navController.navigate("insights") },
@@ -157,6 +160,15 @@ class MainActivity : ComponentActivity() {
                                     val vm: AddFoodViewModel =
                                         viewModel(factory = AddFoodViewModel.Factory)
                                     AddFoodScreen(
+                                        viewModel = vm,
+                                        onDone = { navController.popBackStack() },
+                                    )
+                                }
+
+                                composable("log_text") {
+                                    val vm: ParseConfirmViewModel =
+                                        viewModel(factory = ParseConfirmViewModel.Factory)
+                                    ParseConfirmScreen(
                                         viewModel = vm,
                                         onDone = { navController.popBackStack() },
                                     )

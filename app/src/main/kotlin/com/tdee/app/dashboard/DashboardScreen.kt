@@ -26,6 +26,7 @@ import com.tdee.app.data.FoodEntryEntity
 fun DashboardScreen(
     viewModel: DashboardViewModel,
     onAddFood: () -> Unit = {},
+    onLogText: () -> Unit = {},
     onAddWeight: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onOpenInsights: () -> Unit = {},
@@ -76,6 +77,7 @@ fun DashboardScreen(
         TodayFoodSection(
             foods = todayFoods,
             onAddFood = onAddFood,
+            onLogText = onLogText,
             onDelete = { viewModel.deleteFood(it) },
         )
 
@@ -218,6 +220,7 @@ private fun MacroRow(label: String, consumed: Int, target: Int, unit: String) {
 private fun TodayFoodSection(
     foods: List<FoodEntryEntity>,
     onAddFood: () -> Unit,
+    onLogText: () -> Unit,
     onDelete: (Long) -> Unit,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -228,7 +231,10 @@ private fun TodayFoodSection(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text("Today's food", style = MaterialTheme.typography.titleMedium)
-                TextButton(onClick = onAddFood) { Text("+ Add") }
+                Row {
+                    TextButton(onClick = onLogText) { Text("Describe a meal") }
+                    TextButton(onClick = onAddFood) { Text("+ Add") }
+                }
             }
 
             if (foods.isEmpty()) {
