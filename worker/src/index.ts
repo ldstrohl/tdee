@@ -1,5 +1,3 @@
-import Anthropic from "@anthropic-ai/sdk";
-
 /**
  * TDEE NL food-parse proxy.
  *
@@ -10,20 +8,21 @@ import Anthropic from "@anthropic-ai/sdk";
  * mirroring com.tdee.app.data.ParsedFoodItem:
  *   { name, displayQuantity, unit, grams, kcal, proteinG, fatG, carbG, needsConfirmation }
  *
- * Pipeline: Claude Haiku decomposes the free text into structured items with
+ * Pipeline: Google Gemini decomposes the free text into structured items with
  * estimated quantities and macros (structured-output JSON). If USDA_FDC_KEY is
  * configured, each item's macros are then refined from USDA FoodData Central,
  * scaled to the estimated grams. USDA enrichment is best-effort: any lookup that
- * fails or finds no good match leaves Haiku's estimate in place.
+ * fails or finds no good match leaves Gemini's estimate in place.
  */
 
 interface Env {
-  ANTHROPIC_API_KEY: string;
+  GEMINI_API_KEY: string;
+  GEMINI_MODEL?: string; // defaults to DEFAULT_MODEL (set as a [vars] entry in wrangler.toml)
   USDA_FDC_KEY?: string;
   PROXY_SHARED_SECRET?: string;
 }
 
-const MODEL = "claude-haiku-4-5-20251001";
+const DEFAULT_MODEL = "gemini-2.5-flash";
 
 const SYSTEM_PROMPT = `You convert a free-text meal description into structured food items.
 
@@ -35,32 +34,45 @@ Rules:
 - If the text contains no food, return an empty items array.
 - All numbers must be non-negative. Round to whole numbers.`;
 
-const FORMAT_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
+// Gemini responseSchema is an OpenAPI 3.0 subset: uppercase type enums, no
+// additionalProperties. propertyOrdering keeps the model's output stable.
+const ITEM_PROPS = [
+  "name",
+  "query",
+  "displayQuantity",
+  "unit",
+  "grams",
+  "kcal",
+  "proteinG",
+  "fatG",
+  "carbG",
+] as const;
+
+const RESPONSE_SCHEMA = {
+  type: "OBJECT",
   properties: {
     items: {
-      type: "array",
+      type: "ARRAY",
       items: {
-        type: "object",
-        additionalProperties: false,
+        type: "OBJECT",
         properties: {
-          name: { type: "string", description: "Display name of the food, e.g. 'Scrambled eggs'" },
-          query: { type: "string", description: "Generic nutrition-database search phrase" },
-          displayQuantity: { type: "number", description: "Numeric quantity, e.g. 2" },
-          unit: { type: "string", description: "Unit for the quantity, e.g. 'egg', 'cup', 'g'" },
-          grams: { type: "number", description: "Estimated total mass in grams" },
-          kcal: { type: "number", description: "Estimated total calories" },
-          proteinG: { type: "number", description: "Estimated total protein in grams" },
-          fatG: { type: "number", description: "Estimated total fat in grams" },
-          carbG: { type: "number", description: "Estimated total carbohydrate in grams" },
+          name: { type: "STRING", description: "Display name, e.g. 'Scrambled eggs'" },
+          query: { type: "STRING", description: "Generic nutrition-database search phrase" },
+          displayQuantity: { type: "NUMBER", description: "Numeric quantity, e.g. 2" },
+          unit: { type: "STRING", description: "Unit, e.g. 'egg', 'cup', 'g'" },
+          grams: { type: "NUMBER", description: "Estimated total mass in grams" },
+          kcal: { type: "NUMBER", description: "Estimated total calories" },
+          proteinG: { type: "NUMBER", description: "Estimated total protein in grams" },
+          fatG: { type: "NUMBER", description: "Estimated total fat in grams" },
+          carbG: { type: "NUMBER", description: "Estimated total carbohydrate in grams" },
         },
-        required: ["name", "query", "displayQuantity", "unit", "grams", "kcal", "proteinG", "fatG", "carbG"],
+        required: [...ITEM_PROPS],
+        propertyOrdering: [...ITEM_PROPS],
       },
     },
   },
   required: ["items"],
-} as const;
+};
 
 interface ModelItem {
   name: string;
@@ -113,7 +125,7 @@ export default {
 
     let modelItems: ModelItem[];
     try {
-      modelItems = await parseWithClaude(env, text);
+      modelItems = await parseWithGemini(env, text);
     } catch (e) {
       return json({ error: "parse_failed", detail: String(e) }, 502);
     }
@@ -126,29 +138,52 @@ export default {
   },
 };
 
-async function parseWithClaude(env: Env, text: string): Promise<ModelItem[]> {
-  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+async function parseWithGemini(env: Env, text: string): Promise<ModelItem[]> {
+  const model = env.GEMINI_MODEL || DEFAULT_MODEL;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
-  const response = await client.messages.create({
-    model: MODEL,
-    max_tokens: 1024,
-    system: SYSTEM_PROMPT,
-    output_config: {
-      format: { type: "json_schema", schema: FORMAT_SCHEMA },
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-goog-api-key": env.GEMINI_API_KEY,
     },
-    messages: [{ role: "user", content: text }],
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+      contents: [{ role: "user", parts: [{ text }] }],
+      generationConfig: {
+        temperature: 0,
+        maxOutputTokens: 2048,
+        responseMimeType: "application/json",
+        responseSchema: RESPONSE_SCHEMA,
+        // thinkingBudget 0 disables Gemini 2.5 "thinking" — deterministic, cheap
+        // JSON extraction. Only valid on 2.5 models; remove if GEMINI_MODEL is 1.5/2.0.
+        thinkingConfig: { thinkingBudget: 0 },
+      },
+    }),
   });
 
-  if (response.stop_reason === "refusal") {
-    throw new Error("model refused the request");
+  if (!res.ok) {
+    throw new Error(`gemini ${res.status}: ${await res.text()}`);
   }
 
-  const textBlock = response.content.find((b) => b.type === "text");
-  if (!textBlock || textBlock.type !== "text") {
-    throw new Error("no text block in response");
+  const data = (await res.json()) as {
+    candidates?: Array<{
+      content?: { parts?: Array<{ text?: string }> };
+      finishReason?: string;
+    }>;
+    promptFeedback?: { blockReason?: string };
+  };
+
+  if (data.promptFeedback?.blockReason) {
+    throw new Error(`blocked: ${data.promptFeedback.blockReason}`);
+  }
+  const out = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!out) {
+    throw new Error(`no content (finishReason=${data.candidates?.[0]?.finishReason})`);
   }
 
-  const parsed = JSON.parse(textBlock.text) as { items?: ModelItem[] };
+  const parsed = JSON.parse(out) as { items?: ModelItem[] };
   return parsed.items ?? [];
 }
 

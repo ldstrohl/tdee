@@ -2,19 +2,16 @@
   "name": "tdee-parse-worker",
   "version": "0.1.0",
   "private": true,
-  "description": "Cloudflare Worker: natural-language meal text -> structured macros (Claude Haiku + USDA FoodData Central). Backs the TDEE app's WorkerFoodParser seam.",
+  "description": "Cloudflare Worker: natural-language meal text -> structured macros (Google Gemini + USDA FoodData Central). Backs the TDEE app's WorkerFoodParser seam.",
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": {
-    "@anthropic-ai/sdk": "^0.68.0"
-  },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250620.0",
     "typescript": "^5.5.0",
-    "wrangler": "^3.78.0"
+    "wrangler": "^4.104.0"
   }
 }

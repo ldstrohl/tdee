@@ -1,11 +1,12 @@
 name = "tdee-parse-worker"
 main = "src/index.ts"
 compatibility_date = "2025-06-20"
-# The Anthropic SDK pulls in a few Node built-ins (stream, buffer). nodejs_compat
-# provides them in the Workers runtime.
-compatibility_flags = ["nodejs_compat"]
+
+# Non-secret config. Override the model here without touching code.
+[vars]
+GEMINI_MODEL = "gemini-2.5-flash"
 
 # Secrets are NOT set here — set them with `wrangler secret put` (see README):
-#   ANTHROPIC_API_KEY    (required)
+#   GEMINI_API_KEY       (required)
 #   USDA_FDC_KEY         (optional — enables USDA macro enrichment)
 #   PROXY_SHARED_SECRET  (optional — if set, callers must send Authorization: Bearer <secret>)
