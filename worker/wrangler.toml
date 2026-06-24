@@ -4,7 +4,7 @@ compatibility_date = "2025-06-20"
 
 # Non-secret config. Override the model here without touching code.
 [vars]
-GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_MODEL = "gemini-2.5-flash-lite"
 
 # Secrets are NOT set here — set them with `wrangler secret put` (see README):
 #   GEMINI_API_KEY       (required)

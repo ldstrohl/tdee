@@ -160,8 +160,10 @@ async function parseWithGemini(env: Env, text: string): Promise<ModelItem[]> {
       maxOutputTokens: 4096,
       responseMimeType: "application/json",
       responseSchema: RESPONSE_SCHEMA,
-      // Thinking left at the model default (dynamic on Gemini 2.5) — it gives
-      // noticeably better macro estimates than thinking disabled.
+      // Force dynamic thinking on (-1). gemini-2.5-flash defaults to this, but
+      // gemini-2.5-flash-lite defaults thinking OFF — and thinking gives
+      // noticeably better macro estimates. Set to 0 to disable for max speed/cost.
+      thinkingConfig: { thinkingBudget: -1 },
     },
   });
 
