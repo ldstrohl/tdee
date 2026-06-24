@@ -2,8 +2,10 @@ package com.tdee.app.di
 
 import android.content.Context
 import androidx.room.Room
+import com.tdee.app.BuildConfig
 import com.tdee.app.addfood.FoodParser
 import com.tdee.app.addfood.LocalHeuristicFoodParser
+import com.tdee.app.addfood.WorkerFoodParser
 import com.tdee.app.data.AppDatabase
 import com.tdee.app.data.FoodEntryDao
 import com.tdee.app.data.HealthConnectSyncManager
@@ -44,11 +46,18 @@ class AppContainer(context: Context) {
     val themeStore: ThemeStore by lazy { ThemeStore(appContext) }
 
     /**
-     * Default natural-language [FoodParser]. Currently the [LocalHeuristicFoodParser] placeholder;
-     * swap this binding for the Worker-backed client once the Cloudflare `/parse` endpoint exists —
-     * the parse/confirm flow needs no changes.
+     * Natural-language [FoodParser]. Uses [WorkerFoodParser] when [BuildConfig.FOOD_PARSER_URL]
+     * is set (via `local.properties`), falling back to the local heuristic placeholder otherwise.
+     * The parse/confirm flow needs no changes either way.
      */
-    val foodParser: FoodParser by lazy { LocalHeuristicFoodParser() }
+    val foodParser: FoodParser by lazy {
+        val url = BuildConfig.FOOD_PARSER_URL
+        if (url.isNotBlank()) {
+            WorkerFoodParser(url, BuildConfig.FOOD_PARSER_SECRET.ifBlank { null })
+        } else {
+            LocalHeuristicFoodParser()
+        }
+    }
 
     val repository: TdeeRepository by lazy {
         TdeeRepository(
