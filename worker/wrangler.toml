@@ -8,5 +8,4 @@ GEMINI_MODEL = "gemini-2.5-flash"
 
 # Secrets are NOT set here — set them with `wrangler secret put` (see README):
 #   GEMINI_API_KEY       (required)
-#   USDA_FDC_KEY         (optional — enables USDA macro enrichment)
 #   PROXY_SHARED_SECRET  (optional — if set, callers must send Authorization: Bearer <secret>)
