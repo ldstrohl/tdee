@@ -142,29 +142,41 @@ async function parseWithGemini(env: Env, text: string): Promise<ModelItem[]> {
   const model = env.GEMINI_MODEL || DEFAULT_MODEL;
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-goog-api-key": env.GEMINI_API_KEY,
+  const requestBody = JSON.stringify({
+    systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+    contents: [{ role: "user", parts: [{ text }] }],
+    generationConfig: {
+      temperature: 0,
+      maxOutputTokens: 4096,
+      responseMimeType: "application/json",
+      responseSchema: RESPONSE_SCHEMA,
+      // thinkingBudget 0 disables Gemini 2.5 "thinking" — deterministic, cheap
+      // JSON extraction. Only valid on 2.5 models; remove if GEMINI_MODEL is 1.5/2.0.
+      thinkingConfig: { thinkingBudget: 0 },
     },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-      contents: [{ role: "user", parts: [{ text }] }],
-      generationConfig: {
-        temperature: 0,
-        maxOutputTokens: 2048,
-        responseMimeType: "application/json",
-        responseSchema: RESPONSE_SCHEMA,
-        // thinkingBudget 0 disables Gemini 2.5 "thinking" — deterministic, cheap
-        // JSON extraction. Only valid on 2.5 models; remove if GEMINI_MODEL is 1.5/2.0.
-        thinkingConfig: { thinkingBudget: 0 },
-      },
-    }),
   });
 
-  if (!res.ok) {
-    throw new Error(`gemini ${res.status}: ${await res.text()}`);
+  // Gemini Flash returns transient 503 (UNAVAILABLE) under load; retry briefly.
+  let res: Response | null = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": env.GEMINI_API_KEY,
+      },
+      body: requestBody,
+    });
+    if (res.ok) break;
+    if ((res.status === 503 || res.status === 429 || res.status === 500) && attempt < 2) {
+      await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+      continue;
+    }
+    break;
+  }
+
+  if (!res || !res.ok) {
+    throw new Error(`gemini ${res?.status}: ${res ? await res.text() : "no response"}`);
   }
 
   const data = (await res.json()) as {
