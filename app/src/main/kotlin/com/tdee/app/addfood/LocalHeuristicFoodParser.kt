@@ -1,14 +1,11 @@
 package com.tdee.app.addfood
 
 /**
- * Local stand-in [FoodParser] for the natural-language food-logging flow (outline modules 1–2).
+ * Local, offline [FoodParser] that splits text into named items with zero macros.
  *
- * This is a PLACEHOLDER. The real natural-language parsing (Haiku + USDA lookup) lives in a
- * Cloudflare Worker that is not built yet. When it ships, a `WorkerFoodParser` (HTTP →
- * Cloudflare `/parse`, returning matched USDA macros) will replace this class behind the same
- * [FoodParser] seam — no screen changes needed. The confirmation screen prefills its editable
- * fields from each [ParsedFoodItem], so it works identically for both: the numbers are 0 now
- * (the user fills them in) and real once the Worker exists.
+ * No longer the production path — [LlmFoodParser] (client-direct, bring-your-own-key) backs the
+ * parse/confirm flow. Kept as a network-free fallback/test double: each item prefills the
+ * confirmation screen so the user fills in the numbers manually.
  *
  * Heuristic: split [text] into items on commas and the word "and" (case-insensitive), trim each,
  * drop blanks, and emit one [ParsedFoodItem] per item using the item text as [ParsedFoodItem.name]
@@ -16,9 +13,9 @@ package com.tdee.app.addfood
  */
 class LocalHeuristicFoodParser : FoodParser {
 
-    override suspend fun parse(text: String): List<ParsedFoodItem> {
+    override suspend fun parse(text: String): ParseResult {
         // Split on commas and the standalone word "and" (case-insensitive).
-        return SPLIT_REGEX.split(text)
+        val items = SPLIT_REGEX.split(text)
             .map { it.trim() }
             .filter { it.isNotBlank() }
             .map { item ->
@@ -34,6 +31,7 @@ class LocalHeuristicFoodParser : FoodParser {
                     needsConfirmation = true,
                 )
             }
+        return ParseResult.Success(items)
     }
 
     private companion object {

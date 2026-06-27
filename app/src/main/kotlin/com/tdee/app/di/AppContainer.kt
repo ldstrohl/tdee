@@ -2,11 +2,10 @@ package com.tdee.app.di
 
 import android.content.Context
 import androidx.room.Room
-import com.tdee.app.BuildConfig
 import com.tdee.app.addfood.FoodParser
-import com.tdee.app.addfood.LocalHeuristicFoodParser
-import com.tdee.app.addfood.WorkerFoodParser
+import com.tdee.app.addfood.LlmFoodParser
 import com.tdee.app.data.AppDatabase
+import com.tdee.app.data.LlmSettingsStore
 import com.tdee.app.data.MIGRATION_2_3
 import com.tdee.app.data.MIGRATION_3_4
 import com.tdee.app.data.SavedMealDao
@@ -20,6 +19,7 @@ import com.tdee.app.data.UserProfileDao
 import com.tdee.app.data.WeightEntryDao
 import com.tdee.app.data.WeightTrendCacheDao
 import com.tdee.app.ui.theme.ThemeStore
+import okhttp3.OkHttpClient
 import java.time.Clock
 
 /**
@@ -49,18 +49,15 @@ class AppContainer(context: Context) {
 
     val themeStore: ThemeStore by lazy { ThemeStore(appContext) }
 
+    val llmSettingsStore: LlmSettingsStore by lazy { LlmSettingsStore(appContext) }
+
     /**
-     * Natural-language [FoodParser]. Uses [WorkerFoodParser] when [BuildConfig.FOOD_PARSER_URL]
-     * is set (via `local.properties`), falling back to the local heuristic placeholder otherwise.
-     * The parse/confirm flow needs no changes either way.
+     * Natural-language [FoodParser]: client-direct, bring-your-own-key ([LlmFoodParser]). Reads the
+     * selected provider/model/key from [llmSettingsStore] at parse time; with no key it returns a
+     * NO_KEY failure the UI surfaces (manual entry still works).
      */
     val foodParser: FoodParser by lazy {
-        val url = BuildConfig.FOOD_PARSER_URL
-        if (url.isNotBlank()) {
-            WorkerFoodParser(url, BuildConfig.FOOD_PARSER_SECRET.ifBlank { null })
-        } else {
-            LocalHeuristicFoodParser()
-        }
+        LlmFoodParser(llmSettingsStore, OkHttpClient())
     }
 
     val repository: TdeeRepository by lazy {

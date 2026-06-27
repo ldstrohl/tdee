@@ -21,6 +21,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -284,5 +285,34 @@ class ParseConfirmViewModelTest {
         val mealIds = entries.map { it.mealId }.distinct()
         assertEquals(1, mealIds.size)
         assertNotNull(mealIds[0])
+    }
+
+    // -----------------------------------------------------------------------
+    // Parse failures surface as a dismissible error (and clear on a later success)
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `parse failure sets parseError and clears items`() = runTest {
+        val failing = object : FoodParser {
+            override suspend fun parse(text: String): ParseResult =
+                ParseResult.Failure(ParseErrorKind.NO_KEY, "Add an API key in Settings.")
+        }
+        val failVm = ParseConfirmViewModel(failing, repo)
+
+        failVm.setText("2 eggs")
+        failVm.parse()
+
+        assertEquals("Add an API key in Settings.", failVm.state.value.parseError)
+        assertTrue(failVm.state.value.items.isEmpty())
+        assertFalse(failVm.state.value.parsing)
+    }
+
+    @Test
+    fun `a successful parse clears a prior parseError`() = runTest {
+        vm.setText("2 eggs and oatmeal")
+        vm.parse()
+
+        assertNull(vm.state.value.parseError)
+        assertEquals(2, vm.state.value.items.size)
     }
 }

@@ -53,6 +53,8 @@ data class ParseConfirmState(
     val text: String = "",
     val items: List<EditableFoodItem> = emptyList(),
     val parsing: Boolean = false,
+    /** Non-null when the last parse failed; shown as a dismissible banner. Cleared on next parse. */
+    val parseError: String? = null,
 ) {
     /** Save All is enabled when at least one item is valid. Invalid items are skipped on save. */
     val canSave: Boolean get() = items.any { it.isValid }
@@ -123,13 +125,22 @@ class ParseConfirmViewModel(
         val text = _state.value.text
         if (text.isBlank()) return
         viewModelScope.launch {
-            _state.update { it.copy(parsing = true) }
-            val parsed = parser.parse(text)
-            _state.update {
-                it.copy(
-                    parsing = false,
-                    items = parsed.map { p -> EditableFoodItem.from(p) },
-                )
+            _state.update { it.copy(parsing = true, parseError = null) }
+            when (val result = parser.parse(text)) {
+                is ParseResult.Success -> _state.update {
+                    it.copy(
+                        parsing = false,
+                        parseError = null,
+                        items = result.items.map { p -> EditableFoodItem.from(p) },
+                    )
+                }
+                is ParseResult.Failure -> _state.update {
+                    it.copy(
+                        parsing = false,
+                        parseError = result.message,
+                        items = emptyList(),
+                    )
+                }
             }
         }
     }

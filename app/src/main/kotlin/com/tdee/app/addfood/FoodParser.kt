@@ -3,20 +3,30 @@ package com.tdee.app.addfood
 /**
  * Drop-in seam for natural-language food parsing.
  *
- * This interface defines the contract that a future NL `/parse` proxy client (outline.md
- * modules 1–2) will implement. The manual add-food form does NOT route through it yet —
- * it is provided as a wiring point for the NL-input flow planned for a later task.
- *
- * To plug in the real parser: implement this interface against the `/parse` HTTP client and
- * bind it wherever [FoodParser] is injected. No screens need to change.
+ * Implemented by [LlmFoodParser] (client-direct, bring-your-own-key) — the app calls the user's
+ * chosen LLM provider with a key stored on-device. The manual add-food form does not route through
+ * this seam; it backs the "Describe a meal" parse/confirm flow.
  */
 interface FoodParser {
     /**
-     * Parse [text] (a natural-language food description, e.g. "2 eggs and a slice of toast")
-     * into a list of candidate food items. Returns an empty list if nothing could be parsed.
+     * Parse [text] (a natural-language food description, e.g. "2 eggs and a slice of toast") into
+     * structured food items. Returns a [ParseResult.Success] (possibly with an empty list when the
+     * text names no food) or a [ParseResult.Failure] that the UI surfaces to the user.
      */
-    suspend fun parse(text: String): List<ParsedFoodItem>
+    suspend fun parse(text: String): ParseResult
 }
+
+/**
+ * Outcome of [FoodParser.parse]: either parsed [items][ParseResult.Success.items] or a typed
+ * [failure][ParseResult.Failure] carrying a short, user-facing [message][ParseResult.Failure.message].
+ */
+sealed interface ParseResult {
+    data class Success(val items: List<ParsedFoodItem>) : ParseResult
+    data class Failure(val kind: ParseErrorKind, val message: String) : ParseResult
+}
+
+/** Why a parse failed — drives messaging and (future) retry/UX decisions. */
+enum class ParseErrorKind { NO_KEY, NETWORK, RATE_LIMITED, AUTH, SERVER, BAD_RESPONSE, UNKNOWN }
 
 /**
  * A single food item produced by [FoodParser].
@@ -51,12 +61,10 @@ data class ParsedFoodItem(
 )
 
 /**
- * Trivial stub implementation — always returns an empty list.
+ * Trivial stub implementation — always returns an empty success.
  *
- * Stands in until the real HTTP-backed parser is wired in. Returning empty rather than
- * throwing means any code that calls parse() today gracefully falls through to the manual
- * entry form with no user-visible error.
+ * Stands in where a [FoodParser] is needed but no parsing should happen.
  */
 class StubFoodParser : FoodParser {
-    override suspend fun parse(text: String): List<ParsedFoodItem> = emptyList()
+    override suspend fun parse(text: String): ParseResult = ParseResult.Success(emptyList())
 }

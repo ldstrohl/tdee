@@ -14,39 +14,42 @@ class LocalHeuristicFoodParserTest {
 
     private val parser = LocalHeuristicFoodParser()
 
+    private suspend fun items(text: String) =
+        (parser.parse(text) as ParseResult.Success).items
+
     @Test
     fun `splits on the word and`() = runTest {
-        val items = parser.parse("2 eggs and oatmeal")
+        val items = items("2 eggs and oatmeal")
         assertEquals(listOf("2 eggs", "oatmeal"), items.map { it.name })
     }
 
     @Test
     fun `splits on commas`() = runTest {
-        val items = parser.parse("apple, banana, toast")
+        val items = items("apple, banana, toast")
         assertEquals(listOf("apple", "banana", "toast"), items.map { it.name })
     }
 
     @Test
     fun `splits on both commas and and`() = runTest {
-        val items = parser.parse("apple, banana and toast")
+        val items = items("apple, banana and toast")
         assertEquals(listOf("apple", "banana", "toast"), items.map { it.name })
     }
 
     @Test
     fun `drops blank items`() = runTest {
-        val items = parser.parse("apple, , and banana")
+        val items = items("apple, , and banana")
         assertEquals(listOf("apple", "banana"), items.map { it.name })
     }
 
     @Test
     fun `empty text yields empty list`() = runTest {
-        assertTrue(parser.parse("").isEmpty())
-        assertTrue(parser.parse("   ").isEmpty())
+        assertTrue(items("").isEmpty())
+        assertTrue(items("   ").isEmpty())
     }
 
     @Test
     fun `each item has zero macros and needs confirmation`() = runTest {
-        val item = parser.parse("oatmeal").single()
+        val item = items("oatmeal").single()
         assertEquals("oatmeal", item.name)
         assertEquals(0.0, item.kcal, 0.0)
         assertEquals(0.0, item.proteinG, 0.0)
@@ -57,7 +60,7 @@ class LocalHeuristicFoodParserTest {
 
     @Test
     fun `does not split the substring and inside a word`() = runTest {
-        val items = parser.parse("sandwich")
+        val items = items("sandwich")
         assertEquals(listOf("sandwich"), items.map { it.name })
     }
 }

@@ -1,18 +1,9 @@
-import java.util.Properties
-
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
 }
-
-val localProps = Properties().apply {
-    val f = rootProject.file("local.properties")
-    if (f.exists()) f.inputStream().use { load(it) }
-}
-val foodParserUrl = localProps.getProperty("FOOD_PARSER_URL", "")
-val foodParserSecret = localProps.getProperty("FOOD_PARSER_SECRET", "")
 
 android {
     namespace = "com.tdee.app"
@@ -26,8 +17,6 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField("String", "FOOD_PARSER_URL", "\"$foodParserUrl\"")
-        buildConfigField("String", "FOOD_PARSER_SECRET", "\"$foodParserSecret\"")
     }
 
     buildTypes {
@@ -94,8 +83,11 @@ dependencies {
     // WorkManager (periodic HC sync)
     implementation(libs.androidx.work.runtime.ktx)
 
-    // OkHttp (WorkerFoodParser HTTP client)
+    // OkHttp (LlmFoodParser HTTP client)
     implementation(libs.okhttp)
+
+    // Encrypted storage for the user's LLM API keys
+    implementation(libs.androidx.security.crypto)
 
     // Debug
     debugImplementation(libs.androidx.compose.ui.tooling)
