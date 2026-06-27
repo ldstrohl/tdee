@@ -41,6 +41,8 @@ import com.tdee.app.onboarding.OnboardingScreen
 import com.tdee.app.onboarding.OnboardingViewModel
 import com.tdee.app.savedmeals.SavedMealsScreen
 import com.tdee.app.savedmeals.SavedMealsViewModel
+import com.tdee.app.settings.LlmSettingsScreen
+import com.tdee.app.settings.LlmSettingsViewModel
 import com.tdee.app.settings.SettingsRoute
 import com.tdee.app.ui.theme.TdeeTheme
 
@@ -137,6 +139,16 @@ class MainActivity : ComponentActivity() {
                                         onSelect = { container.themeStore.set(it) },
                                         onBack = { navController.popBackStack() },
                                         onEditProfile = { navController.navigate("edit_profile") },
+                                        onMealParsing = { navController.navigate("llm_settings") },
+                                    )
+                                }
+
+                                composable("llm_settings") {
+                                    val vm: LlmSettingsViewModel =
+                                        viewModel(factory = LlmSettingsViewModel.Factory)
+                                    LlmSettingsScreen(
+                                        viewModel = vm,
+                                        onBack = { navController.popBackStack() },
                                     )
                                 }
 

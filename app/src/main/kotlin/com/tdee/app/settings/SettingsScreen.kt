@@ -51,6 +51,7 @@ fun SettingsScreen(
     onSelect: (ThemePreference) -> Unit,
     onBack: () -> Unit,
     onEditProfile: () -> Unit = {},
+    onMealParsing: () -> Unit = {},
     healthConnectState: HealthConnectUiState = HealthConnectUiState.Loading,
     onHealthConnectTap: () -> Unit = {},
     onExportData: () -> Unit = {},
@@ -79,6 +80,22 @@ fun SettingsScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text("Edit profile", style = MaterialTheme.typography.bodyLarge)
+        }
+
+        // Meal parsing (AI) entry
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onMealParsing() }
+                .padding(vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text("Meal parsing (AI)", style = MaterialTheme.typography.bodyLarge)
+            Text(
+                "Choose a provider and add an API key to log meals in plain language",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
 
         // Health Connect entry
