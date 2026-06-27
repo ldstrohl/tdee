@@ -11,9 +11,10 @@ import androidx.room.TypeConverters
         FoodEntryEntity::class,
         TargetPeriodEntity::class,
         WeightTrendCacheEntity::class,
+        SavedMealEntity::class,
     ],
-    version = 3,
-    exportSchema = false,
+    version = 4,
+    exportSchema = true,
 )
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
@@ -22,4 +23,5 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun foodEntryDao(): FoodEntryDao
     abstract fun targetPeriodDao(): TargetPeriodDao
     abstract fun weightTrendCacheDao(): WeightTrendCacheDao
+    abstract fun savedMealDao(): SavedMealDao
 }

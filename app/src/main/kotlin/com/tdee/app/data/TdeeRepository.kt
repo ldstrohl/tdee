@@ -49,6 +49,7 @@ class TdeeRepository(
     private val foodDao: FoodEntryDao,
     private val targetDao: TargetPeriodDao,
     private val trendCacheDao: WeightTrendCacheDao,
+    private val savedMealDao: SavedMealDao,
     private val currentUser: CurrentUser,
     private val zone: ZoneId = ZoneId.systemDefault(),
     private val clock: Clock = Clock.systemDefaultZone(),
@@ -577,6 +578,130 @@ class TdeeRepository(
             carbG = entries.sumOf { it.carbG },
         )
     }
+
+    // -----------------------------------------------------------------------
+    // Saved meals library
+    // -----------------------------------------------------------------------
+
+    /**
+     * Saves [items] as a named reusable meal for the current user.
+     * @return the auto-generated saved meal id.
+     */
+    suspend fun saveMeal(name: String, items: List<NewFoodItem>): Long =
+        withContext(Dispatchers.IO) {
+            val uid = currentUser.userId()
+            savedMealDao.insert(
+                SavedMealEntity(
+                    userId = uid,
+                    name = name,
+                    items = items.map {
+                        SavedMealItem(
+                            name = it.name, kcal = it.kcal, proteinG = it.proteinG,
+                            fatG = it.fatG, carbG = it.carbG, grams = it.grams,
+                        )
+                    },
+                    createdAt = clock.instant(),
+                )
+            )
+        }
+
+    /**
+     * Snapshots the active entries in [mealId] and saves them as a named reusable meal.
+     * @return the auto-generated saved meal id.
+     */
+    suspend fun saveMealFromGroup(name: String, mealId: String): Long =
+        withContext(Dispatchers.IO) {
+            val uid = currentUser.userId()
+            val entries = foodDao.getByMeal(uid, mealId)
+            savedMealDao.insert(
+                SavedMealEntity(
+                    userId = uid,
+                    name = name,
+                    items = entries.map {
+                        SavedMealItem(
+                            name = it.name, kcal = it.kcal, proteinG = it.proteinG,
+                            fatG = it.fatG, carbG = it.carbG,
+                            grams = it.grams.takeIf { g -> g > 0 },
+                        )
+                    },
+                    createdAt = clock.instant(),
+                )
+            )
+        }
+
+    /** Reactive stream of saved meals for the current user, newest first. */
+    fun observeSavedMeals(): Flow<List<SavedMealEntity>> =
+        savedMealDao.observeForUser(currentUser.userId())
+
+    /** Deletes the saved meal with [id]. */
+    suspend fun deleteSavedMeal(id: Long) = withContext(Dispatchers.IO) {
+        savedMealDao.deleteById(id)
+    }
+
+    /**
+     * Logs the saved meal with [savedMealId] as a new food group on [loggedDate] (today when null).
+     * @return the new mealId, or an empty string if the saved meal was not found.
+     */
+    suspend fun logSavedMeal(savedMealId: Long, loggedDate: LocalDate? = null): String =
+        withContext(Dispatchers.IO) {
+            val meal = savedMealDao.getById(savedMealId) ?: return@withContext ""
+            val items = meal.items.map {
+                NewFoodItem(
+                    name = it.name, kcal = it.kcal, proteinG = it.proteinG,
+                    fatG = it.fatG, carbG = it.carbG, grams = it.grams,
+                )
+            }
+            addFoodGroup(items, loggedDate)
+        }
+
+    /**
+     * Returns the non-deleted food entries whose log-day equals [date] for the current user.
+     */
+    suspend fun foodEntriesForDate(date: LocalDate): List<FoodEntryEntity> =
+        withContext(Dispatchers.IO) {
+            val uid = currentUser.userId()
+            val profileEntity = profileDao.get(uid) ?: return@withContext emptyList()
+            val windowStart = date.atStartOfDay(zone).toInstant()
+                .plusSeconds(profileEntity.dayStartHour * 3600L)
+            val windowEnd = windowStart.plusSeconds(24 * 3600L)
+            foodDao.getActiveInRange(uid, windowStart, windowEnd)
+        }
+
+    /**
+     * Re-inserts the entries of [mealId] as a new food group on [targetDate] (today when null).
+     * @return the new mealId.
+     */
+    suspend fun repeatMeal(mealId: String, targetDate: LocalDate? = null): String =
+        withContext(Dispatchers.IO) {
+            val uid = currentUser.userId()
+            val entries = foodDao.getByMeal(uid, mealId)
+            val items = entries.map {
+                NewFoodItem(
+                    name = it.name, kcal = it.kcal, proteinG = it.proteinG,
+                    fatG = it.fatG, carbG = it.carbG,
+                    grams = it.grams.takeIf { g -> g > 0 },
+                )
+            }
+            addFoodGroup(items, targetDate)
+        }
+
+    /**
+     * Re-inserts the food entry with [id] as a standalone entry on [targetDate] (today when null).
+     */
+    suspend fun repeatEntry(id: Long, targetDate: LocalDate? = null) =
+        withContext(Dispatchers.IO) {
+            val entry = foodDao.getById(id) ?: return@withContext
+            addFood(
+                name = entry.name,
+                kcal = entry.kcal,
+                proteinG = entry.proteinG,
+                fatG = entry.fatG,
+                carbG = entry.carbG,
+                grams = entry.grams.takeIf { it > 0 },
+                mealId = null,
+                loggedDate = targetDate,
+            )
+        }
 
     // -----------------------------------------------------------------------
     // Weight logging

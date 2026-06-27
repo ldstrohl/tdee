@@ -130,6 +130,10 @@ class DashboardViewModel(private val repo: TdeeRepository) : ViewModel() {
         viewModelScope.launch { repo.softDeleteMeal(mealId) }
     }
 
+    fun saveMealFromGroup(mealId: String, name: String) {
+        viewModelScope.launch { repo.saveMealFromGroup(name, mealId) }
+    }
+
     private fun load() {
         viewModelScope.launch {
             try {

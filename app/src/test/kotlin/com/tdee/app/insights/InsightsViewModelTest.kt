@@ -84,6 +84,7 @@ class InsightsViewModelTest {
             foodDao = db.foodEntryDao(),
             targetDao = db.targetPeriodDao(),
             trendCacheDao = db.weightTrendCacheDao(),
+            savedMealDao = db.savedMealDao(),
             currentUser = fakeCurrentUser,
             zone = zone,
             clock = fixedClock,

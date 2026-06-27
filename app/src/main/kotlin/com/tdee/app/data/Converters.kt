@@ -3,6 +3,8 @@ package com.tdee.app.data
 import androidx.room.TypeConverter
 import com.tdee.domain.ActivityLevel
 import com.tdee.domain.Sex
+import org.json.JSONArray
+import org.json.JSONObject
 import java.time.Instant
 import java.time.LocalDate
 
@@ -57,6 +59,40 @@ class Converters {
 
     @TypeConverter
     fun toTdeeMethod(method: TdeeMethodDb?): String? = method?.name
+
+    // --- SavedMealItem list (stored as JSON array string) ---
+
+    @TypeConverter
+    fun fromSavedMealItems(items: List<SavedMealItem>): String {
+        val arr = JSONArray()
+        for (item in items) {
+            val obj = JSONObject()
+            obj.put("name", item.name)
+            obj.put("kcal", item.kcal)
+            obj.put("proteinG", item.proteinG)
+            obj.put("fatG", item.fatG)
+            obj.put("carbG", item.carbG)
+            if (item.grams != null) obj.put("grams", item.grams)
+            arr.put(obj)
+        }
+        return arr.toString()
+    }
+
+    @TypeConverter
+    fun toSavedMealItems(value: String): List<SavedMealItem> {
+        val arr = JSONArray(value)
+        return (0 until arr.length()).map { i ->
+            val obj = arr.getJSONObject(i)
+            SavedMealItem(
+                name = obj.getString("name"),
+                kcal = obj.getDouble("kcal"),
+                proteinG = obj.getDouble("proteinG"),
+                fatG = obj.getDouble("fatG"),
+                carbG = obj.getDouble("carbG"),
+                grams = if (obj.has("grams")) obj.getDouble("grams") else null,
+            )
+        }
+    }
 }
 
 enum class WeightSource { HEALTH_CONNECT, MANUAL }

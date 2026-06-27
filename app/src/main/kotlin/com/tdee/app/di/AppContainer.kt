@@ -8,6 +8,8 @@ import com.tdee.app.addfood.LocalHeuristicFoodParser
 import com.tdee.app.addfood.WorkerFoodParser
 import com.tdee.app.data.AppDatabase
 import com.tdee.app.data.MIGRATION_2_3
+import com.tdee.app.data.MIGRATION_3_4
+import com.tdee.app.data.SavedMealDao
 import com.tdee.app.data.FoodEntryDao
 import com.tdee.app.data.HealthConnectSyncManager
 import com.tdee.app.data.RealHealthConnectSource
@@ -30,7 +32,7 @@ class AppContainer(context: Context) {
 
     val database: AppDatabase by lazy {
         Room.databaseBuilder(appContext, AppDatabase::class.java, "tdee.db")
-            .addMigrations(MIGRATION_2_3)
+            .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
             .build()
     }
 
@@ -39,6 +41,7 @@ class AppContainer(context: Context) {
     val foodDao: FoodEntryDao by lazy { database.foodEntryDao() }
     val targetPeriodDao: TargetPeriodDao by lazy { database.targetPeriodDao() }
     val trendCacheDao: WeightTrendCacheDao by lazy { database.weightTrendCacheDao() }
+    val savedMealDao: SavedMealDao by lazy { database.savedMealDao() }
 
     val currentUser: SharedPreferencesCurrentUser by lazy {
         SharedPreferencesCurrentUser(appContext)
@@ -67,6 +70,7 @@ class AppContainer(context: Context) {
             foodDao = foodDao,
             targetDao = targetPeriodDao,
             trendCacheDao = trendCacheDao,
+            savedMealDao = savedMealDao,
             currentUser = currentUser,
         )
     }

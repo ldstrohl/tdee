@@ -11,22 +11,35 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ParseConfirmScreen(
     viewModel: ParseConfirmViewModel,
@@ -34,9 +47,79 @@ fun ParseConfirmScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val saved by viewModel.saved.collectAsState()
+    val mealSaved by viewModel.mealSaved.collectAsState()
+    val selectedDate by viewModel.selectedDate.collectAsState()
 
     LaunchedEffect(saved) {
         if (saved) onDone()
+    }
+
+    val today = remember { LocalDate.now() }
+    var showDatePicker by remember { mutableStateOf(false) }
+    var showSaveAsMealDialog by remember { mutableStateOf(false) }
+    var mealName by remember { mutableStateOf("") }
+
+    val datePickerState = rememberDatePickerState(
+        initialSelectedDateMillis = selectedDate
+            .atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
+        selectableDates = object : androidx.compose.material3.SelectableDates {
+            override fun isSelectableDate(utcTimeMillis: Long): Boolean {
+                val date = Instant.ofEpochMilli(utcTimeMillis)
+                    .atZone(ZoneOffset.UTC).toLocalDate()
+                return !date.isAfter(today)
+            }
+        },
+    )
+
+    if (showDatePicker) {
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    datePickerState.selectedDateMillis?.let { millis ->
+                        val picked = Instant.ofEpochMilli(millis)
+                            .atZone(ZoneOffset.UTC).toLocalDate()
+                        viewModel.setSelectedDate(picked)
+                    }
+                    showDatePicker = false
+                }) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) { Text("Cancel") }
+            },
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
+
+    if (showSaveAsMealDialog) {
+        AlertDialog(
+            onDismissRequest = { showSaveAsMealDialog = false; mealName = "" },
+            title = { Text("Save as meal") },
+            text = {
+                OutlinedTextField(
+                    value = mealName,
+                    onValueChange = { mealName = it },
+                    label = { Text("Meal name") },
+                    singleLine = true,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.saveAsMeal(mealName)
+                        showSaveAsMealDialog = false
+                        mealName = ""
+                    },
+                    enabled = mealName.isNotBlank(),
+                ) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSaveAsMealDialog = false; mealName = "" }) {
+                    Text("Cancel")
+                }
+            },
+        )
     }
 
     Column(
@@ -49,6 +132,16 @@ fun ParseConfirmScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Text("Describe a meal", style = MaterialTheme.typography.headlineSmall)
+
+        // Date selector — defaults to today; tap to log to a prior day.
+        val dateLabel = if (selectedDate == today) "Today" else
+            selectedDate.format(DateTimeFormatter.ofPattern("MMM d, yyyy"))
+        OutlinedButton(
+            onClick = { showDatePicker = true },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Logging for: $dateLabel")
+        }
 
         OutlinedTextField(
             value = state.text,
@@ -111,12 +204,32 @@ fun ParseConfirmScreen(
             Text("Add item")
         }
 
-        Button(
-            onClick = viewModel::saveAll,
-            enabled = state.canSave,
+        if (mealSaved) {
+            Text(
+                "Meal saved to library.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+
+        Row(
             modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text("Save all")
+            OutlinedButton(
+                onClick = { showSaveAsMealDialog = true },
+                enabled = state.canSave,
+                modifier = Modifier.weight(1f),
+            ) {
+                Text("Save as meal")
+            }
+            Button(
+                onClick = viewModel::saveAll,
+                enabled = state.canSave,
+                modifier = Modifier.weight(1f),
+            ) {
+                Text("Save all")
+            }
         }
     }
 }

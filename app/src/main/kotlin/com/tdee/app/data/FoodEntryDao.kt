@@ -73,4 +73,12 @@ interface FoodEntryDao {
     /** Delete all rows across all users — for test teardown only. */
     @Query("DELETE FROM food_entry")
     suspend fun deleteAll()
+
+    /** Non-deleted entries belonging to the given meal group for this user. */
+    @Query(
+        "SELECT * FROM food_entry " +
+        "WHERE userId = :userId AND mealId = :mealId AND deletedAt IS NULL " +
+        "ORDER BY timestamp ASC"
+    )
+    suspend fun getByMeal(userId: String, mealId: String): List<FoodEntryEntity>
 }

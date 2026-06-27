@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.time.LocalDate
 
 // ---------------------------------------------------------------------------
 // Editable item state
@@ -80,8 +81,11 @@ data class ParseConfirmState(
  * [parse] runs the input text through [FoodParser] (today the local placeholder, later the
  * Worker client behind the same seam) and loads the result into an editable item list. The user
  * edits any field, adds or removes items, then [saveAll] writes each VALID item via
- * [TdeeRepository.addFood] for today's log-day (invalid items — blank name or invalid kcal — are
- * silently skipped). [saved] flips to true once writes complete so the screen can navigate away.
+ * [TdeeRepository.addFoodGroup] for the selected log-day. [saved] flips to true once writes
+ * complete so the screen can navigate away.
+ *
+ * [saveAsMeal] saves the current valid items to the saved-meals library without navigating away.
+ * [mealSaved] flips to true briefly to show a confirmation message.
  */
 class ParseConfirmViewModel(
     private val parser: FoodParser,
@@ -95,11 +99,25 @@ class ParseConfirmViewModel(
     /** Flips to true after a successful save. Observe to navigate away. */
     val saved: StateFlow<Boolean> = _saved.asStateFlow()
 
+    private val _mealSaved = MutableStateFlow(false)
+    /** Flips to true after saveAsMeal completes. Resets to false on next edit. */
+    val mealSaved: StateFlow<Boolean> = _mealSaved.asStateFlow()
+
+    /** Selected log-day; defaults to today. */
+    val selectedDate = MutableStateFlow<LocalDate>(LocalDate.now())
+
     // -----------------------------------------------------------------------
     // Input
     // -----------------------------------------------------------------------
 
-    fun setText(v: String) = _state.update { it.copy(text = v) }
+    fun setText(v: String) {
+        _mealSaved.value = false
+        _state.update { it.copy(text = v) }
+    }
+
+    fun setSelectedDate(date: LocalDate) {
+        selectedDate.value = date
+    }
 
     fun parse() {
         val text = _state.value.text
@@ -121,6 +139,7 @@ class ParseConfirmViewModel(
     // -----------------------------------------------------------------------
 
     private fun updateItem(index: Int, transform: (EditableFoodItem) -> EditableFoodItem) {
+        _mealSaved.value = false
         _state.update { s ->
             if (index !in s.items.indices) return@update s
             s.copy(items = s.items.toMutableList().also { it[index] = transform(it[index]) })
@@ -149,20 +168,35 @@ class ParseConfirmViewModel(
         val valid = _state.value.items.filter { it.isValid }
         if (valid.isEmpty()) return
         viewModelScope.launch {
-            val foodItems = valid.map { item ->
-                NewFoodItem(
-                    name = item.name.trim(),
-                    kcal = item.kcalDouble!!,
-                    proteinG = item.proteinG.toDoubleOrNull()?.takeIf { v -> v >= 0 } ?: 0.0,
-                    fatG = item.fatG.toDoubleOrNull()?.takeIf { v -> v >= 0 } ?: 0.0,
-                    carbG = item.carbG.toDoubleOrNull()?.takeIf { v -> v >= 0 } ?: 0.0,
-                    grams = item.grams.toDoubleOrNull()?.takeIf { v -> v >= 0 },
-                )
-            }
-            repo.addFoodGroup(foodItems)
+            val foodItems = validItems()
+            val date = selectedDate.value.takeUnless { it == LocalDate.now() }
+            repo.addFoodGroup(foodItems, date)
             _saved.value = true
         }
     }
+
+    /** Saves the current valid items to the saved-meals library under [name]. */
+    fun saveAsMeal(name: String) {
+        if (name.isBlank()) return
+        val items = validItems()
+        if (items.isEmpty()) return
+        viewModelScope.launch {
+            repo.saveMeal(name.trim(), items)
+            _mealSaved.value = true
+        }
+    }
+
+    private fun validItems(): List<NewFoodItem> =
+        _state.value.items.filter { it.isValid }.map { item ->
+            NewFoodItem(
+                name = item.name.trim(),
+                kcal = item.kcalDouble!!,
+                proteinG = item.proteinG.toDoubleOrNull()?.takeIf { v -> v >= 0 } ?: 0.0,
+                fatG = item.fatG.toDoubleOrNull()?.takeIf { v -> v >= 0 } ?: 0.0,
+                carbG = item.carbG.toDoubleOrNull()?.takeIf { v -> v >= 0 } ?: 0.0,
+                grams = item.grams.toDoubleOrNull()?.takeIf { v -> v >= 0 },
+            )
+        }
 
     // -----------------------------------------------------------------------
     // Factory

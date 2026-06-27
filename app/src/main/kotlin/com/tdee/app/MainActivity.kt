@@ -32,11 +32,15 @@ import com.tdee.app.dashboard.DashboardScreen
 import com.tdee.app.dashboard.DashboardViewModel
 import com.tdee.app.editprofile.EditProfileScreen
 import com.tdee.app.editprofile.EditProfileViewModel
+import com.tdee.app.history.FoodHistoryScreen
+import com.tdee.app.history.FoodHistoryViewModel
 import com.tdee.app.insights.HelpScreen
 import com.tdee.app.insights.InsightsScreen
 import com.tdee.app.insights.InsightsViewModel
 import com.tdee.app.onboarding.OnboardingScreen
 import com.tdee.app.onboarding.OnboardingViewModel
+import com.tdee.app.savedmeals.SavedMealsScreen
+import com.tdee.app.savedmeals.SavedMealsViewModel
 import com.tdee.app.settings.SettingsRoute
 import com.tdee.app.ui.theme.TdeeTheme
 
@@ -50,18 +54,6 @@ class MainActivity : ComponentActivity() {
             val themePreference by container.themeStore.preference.collectAsState()
             TdeeTheme(preference = themePreference) {
                 Surface {
-                    // Collect the profile flow as Compose state.
-                    //
-                    // initial = null means the first Compose frame treats the state as
-                    // "no profile" (shows Onboarding) until Room emits. Room emits the
-                    // first value very quickly, so on a device with an existing profile
-                    // the onboarding screen is visible for at most one or two frames.
-                    // For MVP this flash is acceptable — a proper splash/loading screen
-                    // can be added later without changing this routing logic.
-                    //
-                    // After onboarding saves a profile, observeProfile() re-emits the
-                    // new entity automatically, Compose recomposes, and the Dashboard
-                    // is shown — no manual navigation call needed.
                     val profile by container.repository.observeProfile()
                         .collectAsState(initial = null)
 
@@ -72,9 +64,6 @@ class MainActivity : ComponentActivity() {
                             OnboardingScreen(viewModel = vm)
                         }
                         else -> {
-                            // Foreground incremental HC sync on app open (only when a
-                            // profile exists, i.e. past onboarding). Resilient: no-ops if
-                            // HC is unavailable or permission was never granted.
                             LaunchedEffect(Unit) {
                                 val sync = container.healthConnectSyncManager
                                 val src = container.healthConnectSource
@@ -94,9 +83,6 @@ class MainActivity : ComponentActivity() {
                                 composable("dashboard") {
                                     val vm: DashboardViewModel =
                                         viewModel(factory = DashboardViewModel.Factory)
-                                    // Reload engine-derived targets/TDEE when the dashboard is
-                                    // resumed (e.g. returning from a check-in or target edit), so
-                                    // the displayed active targets reflect the new period.
                                     val lifecycleOwner = LocalLifecycleOwner.current
                                     DisposableEffect(lifecycleOwner) {
                                         val observer = LifecycleEventObserver { _, event ->
@@ -116,6 +102,8 @@ class MainActivity : ComponentActivity() {
                                         onOpenInsights = { navController.navigate("insights") },
                                         onCheckin = { navController.navigate("checkin") },
                                         onEditFood = { id -> navController.navigate("edit_food/$id") },
+                                        onSavedMeals = { navController.navigate("saved_meals") },
+                                        onFoodHistory = { navController.navigate("food_history") },
                                     )
                                 }
 
@@ -200,6 +188,25 @@ class MainActivity : ComponentActivity() {
                                     EditFoodEntryScreen(
                                         viewModel = vm,
                                         onDone = { navController.popBackStack() },
+                                    )
+                                }
+
+                                composable("saved_meals") {
+                                    val vm: SavedMealsViewModel =
+                                        viewModel(factory = SavedMealsViewModel.Factory)
+                                    SavedMealsScreen(
+                                        viewModel = vm,
+                                        onBack = { navController.popBackStack() },
+                                    )
+                                }
+
+                                composable("food_history") {
+                                    val vm: FoodHistoryViewModel =
+                                        viewModel(factory = FoodHistoryViewModel.Factory)
+                                    FoodHistoryScreen(
+                                        viewModel = vm,
+                                        onBack = { navController.popBackStack() },
+                                        onEditFood = { id -> navController.navigate("edit_food/$id") },
                                     )
                                 }
                             }
