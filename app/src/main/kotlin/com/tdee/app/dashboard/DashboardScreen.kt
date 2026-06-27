@@ -1,5 +1,6 @@
 package com.tdee.app.dashboard
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,6 +18,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -31,6 +34,7 @@ fun DashboardScreen(
     onOpenSettings: () -> Unit = {},
     onOpenInsights: () -> Unit = {},
     onCheckin: () -> Unit = {},
+    onEditFood: (Long) -> Unit = {},
 ) {
     val state by viewModel.state.collectAsState()
     val todayFoods by viewModel.todayFoods.collectAsState()
@@ -79,6 +83,8 @@ fun DashboardScreen(
             onAddFood = onAddFood,
             onLogText = onLogText,
             onDelete = { viewModel.deleteFood(it) },
+            onDeleteMeal = { viewModel.deleteMeal(it) },
+            onEditFood = onEditFood,
         )
 
         // Weight logging entry point
@@ -216,13 +222,47 @@ private fun MacroRow(label: String, consumed: Int, target: Int, unit: String) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Display model for grouping
+// ---------------------------------------------------------------------------
+
+private sealed interface FoodDisplayItem {
+    data class Standalone(val entry: FoodEntryEntity) : FoodDisplayItem
+    data class Group(val mealId: String, val items: List<FoodEntryEntity>) : FoodDisplayItem
+}
+
+private fun List<FoodEntryEntity>.toDisplayItems(): List<FoodDisplayItem> {
+    val seenMeals = mutableSetOf<String>()
+    val mealItemsMap = groupBy { it.mealId }.filterKeys { it != null }
+    val result = mutableListOf<FoodDisplayItem>()
+    forEach { entry ->
+        val mid = entry.mealId
+        if (mid == null) {
+            result.add(FoodDisplayItem.Standalone(entry))
+        } else if (seenMeals.add(mid)) {
+            result.add(FoodDisplayItem.Group(mid, mealItemsMap[mid]!!))
+        }
+    }
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// Today's food section
+// ---------------------------------------------------------------------------
+
 @Composable
 private fun TodayFoodSection(
     foods: List<FoodEntryEntity>,
     onAddFood: () -> Unit,
     onLogText: () -> Unit,
     onDelete: (Long) -> Unit,
+    onDeleteMeal: (String) -> Unit,
+    onEditFood: (Long) -> Unit,
 ) {
+    val displayItems = remember(foods) { foods.toDisplayItems() }
+    // Expand state per mealId; default is expanded (true).
+    val expandedState = remember { mutableStateMapOf<String, Boolean>() }
+
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(
@@ -244,23 +284,87 @@ private fun TodayFoodSection(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else {
-                foods.forEach { entry ->
+                displayItems.forEach { displayItem ->
                     HorizontalDivider()
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(entry.name, style = MaterialTheme.typography.bodyMedium)
-                            Text(
-                                "%,d kcal".format(entry.kcal.toInt()),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                    when (displayItem) {
+                        is FoodDisplayItem.Standalone -> {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onEditFood(displayItem.entry.id) }
+                                    .padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(displayItem.entry.name, style = MaterialTheme.typography.bodyMedium)
+                                    Text(
+                                        "%,d kcal".format(displayItem.entry.kcal.toInt()),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                TextButton(onClick = { onDelete(displayItem.entry.id) }) {
+                                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                                }
+                            }
                         }
-                        TextButton(onClick = { onDelete(entry.id) }) {
-                            Text("Delete", color = MaterialTheme.colorScheme.error)
+
+                        is FoodDisplayItem.Group -> {
+                            val isExpanded = expandedState.getOrDefault(displayItem.mealId, true)
+                            val totalKcal = displayItem.items.sumOf { it.kcal }.toInt()
+                            // Group header row — tap to expand/collapse
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        expandedState[displayItem.mealId] = !isExpanded
+                                    }
+                                    .padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    "Meal · ${displayItem.items.size} items",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        "%,d kcal".format(totalKcal),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    TextButton(onClick = { onDeleteMeal(displayItem.mealId) }) {
+                                        Text("Remove meal", color = MaterialTheme.colorScheme.error)
+                                    }
+                                }
+                            }
+                            // Expanded item rows — indented
+                            if (isExpanded) {
+                                displayItem.items.forEach { entry ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(start = 16.dp)
+                                            .clickable { onEditFood(entry.id) }
+                                            .padding(vertical = 4.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(entry.name, style = MaterialTheme.typography.bodyMedium)
+                                            Text(
+                                                "%,d kcal".format(entry.kcal.toInt()),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                        TextButton(onClick = { onDelete(entry.id) }) {
+                                            Text("Delete", color = MaterialTheme.colorScheme.error)
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }

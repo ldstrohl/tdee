@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.tdee.app.TdeeApplication
+import com.tdee.app.data.NewFoodItem
 import com.tdee.app.data.TdeeRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -54,6 +55,19 @@ data class ParseConfirmState(
 ) {
     /** Save All is enabled when at least one item is valid. Invalid items are skipped on save. */
     val canSave: Boolean get() = items.any { it.isValid }
+
+    /** Totals computed over valid items only (matching what saveAll will persist). */
+    val totalKcal: Double
+        get() = items.filter { it.isValid }.sumOf { it.kcalDouble ?: 0.0 }
+    val totalProteinG: Double
+        get() = items.filter { it.isValid }
+            .sumOf { item -> item.proteinG.toDoubleOrNull()?.takeIf { v -> v >= 0 } ?: 0.0 }
+    val totalFatG: Double
+        get() = items.filter { it.isValid }
+            .sumOf { item -> item.fatG.toDoubleOrNull()?.takeIf { v -> v >= 0 } ?: 0.0 }
+    val totalCarbG: Double
+        get() = items.filter { it.isValid }
+            .sumOf { item -> item.carbG.toDoubleOrNull()?.takeIf { v -> v >= 0 } ?: 0.0 }
 }
 
 // ---------------------------------------------------------------------------
@@ -135,16 +149,17 @@ class ParseConfirmViewModel(
         val valid = _state.value.items.filter { it.isValid }
         if (valid.isEmpty()) return
         viewModelScope.launch {
-            valid.forEach { item ->
-                repo.addFood(
+            val foodItems = valid.map { item ->
+                NewFoodItem(
                     name = item.name.trim(),
                     kcal = item.kcalDouble!!,
-                    proteinG = item.proteinG.toDoubleOrNull()?.takeIf { it >= 0 } ?: 0.0,
-                    fatG = item.fatG.toDoubleOrNull()?.takeIf { it >= 0 } ?: 0.0,
-                    carbG = item.carbG.toDoubleOrNull()?.takeIf { it >= 0 } ?: 0.0,
-                    grams = item.grams.toDoubleOrNull()?.takeIf { it >= 0 },
+                    proteinG = item.proteinG.toDoubleOrNull()?.takeIf { v -> v >= 0 } ?: 0.0,
+                    fatG = item.fatG.toDoubleOrNull()?.takeIf { v -> v >= 0 } ?: 0.0,
+                    carbG = item.carbG.toDoubleOrNull()?.takeIf { v -> v >= 0 } ?: 0.0,
+                    grams = item.grams.toDoubleOrNull()?.takeIf { v -> v >= 0 },
                 )
             }
+            repo.addFoodGroup(foodItems)
             _saved.value = true
         }
     }

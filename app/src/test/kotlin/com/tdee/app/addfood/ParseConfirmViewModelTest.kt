@@ -20,6 +20,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -196,5 +197,91 @@ class ParseConfirmViewModelTest {
 
         vm.removeItem(0)
         assertEquals(1, vm.state.value.items.size)
+    }
+
+    // -----------------------------------------------------------------------
+    // Meal totals
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `totalKcal sums kcal of valid items only`() = runTest {
+        vm.setText("a and b and c")
+        vm.parse()
+        assertEquals(3, vm.state.value.items.size)
+
+        // Item 0: valid
+        vm.setKcal(0, "100")
+        // Item 1: valid
+        vm.setKcal(1, "200")
+        // Item 2: kcal blank → invalid → excluded from totals
+
+        assertEquals(300.0, vm.state.value.totalKcal, 0.001)
+    }
+
+    @Test
+    fun `totalProteinG sums protein of valid items using parsed value or 0`() = runTest {
+        vm.setText("a and b")
+        vm.parse()
+
+        vm.setKcal(0, "100")
+        vm.setProteinG(0, "20")
+        vm.setKcal(1, "200")
+        // item 1 proteinG left blank → 0
+
+        assertEquals(20.0, vm.state.value.totalProteinG, 0.001)
+    }
+
+    @Test
+    fun `totals are zero when no items are valid`() = runTest {
+        vm.setText("apple")
+        vm.parse()
+        // kcal is blank → not valid
+        assertEquals(0.0, vm.state.value.totalKcal, 0.001)
+        assertEquals(0.0, vm.state.value.totalProteinG, 0.001)
+        assertEquals(0.0, vm.state.value.totalFatG, 0.001)
+        assertEquals(0.0, vm.state.value.totalCarbG, 0.001)
+    }
+
+    // -----------------------------------------------------------------------
+    // saveAll uses addFoodGroup (shared mealId)
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `saveAll writes all valid items sharing a single mealId`() = runTest {
+        vm.setText("apple and banana")
+        vm.parse()
+
+        vm.setKcal(0, "95")
+        vm.setKcal(1, "105")
+
+        vm.saveAll()
+        vm.saved.filter { it }.first()
+
+        val entries = repo.todayFoodEntries()
+        assertEquals(2, entries.size)
+        val mealIds = entries.map { it.mealId }.distinct()
+        assertEquals("All entries should share one mealId", 1, mealIds.size)
+        assertNotNull("mealId should not be null", mealIds[0])
+    }
+
+    @Test
+    fun `saveAll shares mealId only across valid items (invalid items excluded)`() = runTest {
+        vm.setText("a, b, c")
+        vm.parse()
+
+        // Item 0: valid
+        vm.setKcal(0, "100")
+        // Item 1: invalid (blank kcal)
+        // Item 2: valid
+        vm.setKcal(2, "200")
+
+        vm.saveAll()
+        vm.saved.filter { it }.first()
+
+        val entries = repo.todayFoodEntries()
+        assertEquals(2, entries.size)
+        val mealIds = entries.map { it.mealId }.distinct()
+        assertEquals(1, mealIds.size)
+        assertNotNull(mealIds[0])
     }
 }

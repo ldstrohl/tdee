@@ -53,9 +53,16 @@ interface FoodEntryDao {
     )
     fun observeActiveInRange(userId: String, from: Instant, until: Instant): Flow<List<FoodEntryEntity>>
 
+    @Query("SELECT * FROM food_entry WHERE id = :id")
+    suspend fun getById(id: Long): FoodEntryEntity?
+
     /** Soft-delete by setting deletedAt. */
     @Query("UPDATE food_entry SET deletedAt = :deletedAt WHERE id = :id")
     suspend fun softDelete(id: Long, deletedAt: Instant)
+
+    /** Soft-delete all entries belonging to the given meal group. */
+    @Query("UPDATE food_entry SET deletedAt = :deletedAt WHERE userId = :userId AND mealId = :mealId")
+    suspend fun softDeleteByMeal(userId: String, mealId: String, deletedAt: Instant)
 
     @Query("DELETE FROM food_entry WHERE id = :id")
     suspend fun hardDeleteById(id: Long)

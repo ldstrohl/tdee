@@ -7,6 +7,7 @@ import com.tdee.app.addfood.FoodParser
 import com.tdee.app.addfood.LocalHeuristicFoodParser
 import com.tdee.app.addfood.WorkerFoodParser
 import com.tdee.app.data.AppDatabase
+import com.tdee.app.data.MIGRATION_2_3
 import com.tdee.app.data.FoodEntryDao
 import com.tdee.app.data.HealthConnectSyncManager
 import com.tdee.app.data.RealHealthConnectSource
@@ -29,7 +30,7 @@ class AppContainer(context: Context) {
 
     val database: AppDatabase by lazy {
         Room.databaseBuilder(appContext, AppDatabase::class.java, "tdee.db")
-            .fallbackToDestructiveMigration()
+            .addMigrations(MIGRATION_2_3)
             .build()
     }
 

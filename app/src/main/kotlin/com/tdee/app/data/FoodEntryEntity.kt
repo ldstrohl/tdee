@@ -25,6 +25,7 @@ data class FoodEntryEntity(
     val carbG: Double,
     val fdcId: String? = null,
     val sourceDb: FoodSourceDb,
+    val mealId: String? = null,
     val createdAt: Instant,
     val updatedAt: Instant,
     val deletedAt: Instant? = null,

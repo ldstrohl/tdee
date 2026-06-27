@@ -1,0 +1,292 @@
+package com.tdee.app.data
+
+import androidx.room.Room
+import com.tdee.domain.ActivityLevel
+import com.tdee.domain.Sex
+import kotlinx.coroutines.test.runTest
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.annotation.Config
+import java.time.Clock
+import java.time.Instant
+import java.time.ZoneOffset
+
+/**
+ * Tests for meal-group operations added to [TdeeRepository]:
+ *   - [TdeeRepository.addFoodGroup]
+ *   - [TdeeRepository.getFoodEntry]
+ *   - [TdeeRepository.updateFood]
+ *   - [TdeeRepository.softDeleteMeal]
+ *
+ * Uses an in-memory Room v3 database, a fake [CurrentUser], and a fixed [Clock].
+ * Fixed "now" = 2026-06-21T12:00:00Z → log-day 2026-06-21 (dayStartHour = 0, UTC).
+ */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
+class TdeeRepositoryMealGroupTest {
+
+    private lateinit var db: AppDatabase
+    private lateinit var repo: TdeeRepository
+
+    private val zone = ZoneOffset.UTC
+    private val fixedNow = Instant.parse("2026-06-21T12:00:00Z")
+    private val fixedClock = Clock.fixed(fixedNow, zone)
+
+    private val userId = "meal-group-test-user"
+    private val fakeCurrentUser = CurrentUser { userId }
+
+    @Before
+    fun setup() = runTest {
+        db = Room.inMemoryDatabaseBuilder(
+            RuntimeEnvironment.getApplication(),
+            AppDatabase::class.java,
+        ).allowMainThreadQueries().build()
+
+        db.userProfileDao().upsert(makeProfile(userId))
+
+        repo = TdeeRepository(
+            profileDao = db.userProfileDao(),
+            weightDao = db.weightEntryDao(),
+            foodDao = db.foodEntryDao(),
+            targetDao = db.targetPeriodDao(),
+            trendCacheDao = db.weightTrendCacheDao(),
+            currentUser = fakeCurrentUser,
+            zone = zone,
+            clock = fixedClock,
+        )
+    }
+
+    @After
+    fun teardown() {
+        db.close()
+    }
+
+    // -----------------------------------------------------------------------
+    // addFoodGroup
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `addFoodGroup assigns one shared mealId to all inserted rows`() = runTest {
+        val mealId = repo.addFoodGroup(
+            listOf(
+                NewFoodItem("Apple", 95.0, 0.5, 0.3, 25.0, null),
+                NewFoodItem("Banana", 105.0, 1.3, 0.4, 27.0, null),
+            )
+        )
+
+        val entries = db.foodEntryDao().getActive(userId)
+        assertEquals(2, entries.size)
+        assertEquals(mealId, entries[0].mealId)
+        assertEquals(mealId, entries[1].mealId)
+        assertNotNull(mealId)
+        assertTrue("mealId should be a non-blank UUID", mealId.isNotBlank())
+    }
+
+    @Test
+    fun `addFoodGroup stores all item fields correctly`() = runTest {
+        repo.addFoodGroup(
+            listOf(
+                NewFoodItem("Chicken", 250.0, 30.0, 5.0, 0.0, 120.0),
+            )
+        )
+
+        val entries = db.foodEntryDao().getActive(userId)
+        assertEquals(1, entries.size)
+        val e = entries[0]
+        assertEquals("Chicken", e.name)
+        assertEquals(250.0, e.kcal, 0.001)
+        assertEquals(30.0, e.proteinG, 0.001)
+        assertEquals(5.0, e.fatG, 0.001)
+        assertEquals(0.0, e.carbG, 0.001)
+        assertEquals(120.0, e.grams, 0.001)
+        assertEquals(userId, e.userId)
+        assertEquals(FoodSourceDb.MANUAL, e.sourceDb)
+    }
+
+    @Test
+    fun `addFoodGroup items share the same timestamp`() = runTest {
+        repo.addFoodGroup(
+            listOf(
+                NewFoodItem("A", 100.0, 0.0, 0.0, 0.0, null),
+                NewFoodItem("B", 200.0, 0.0, 0.0, 0.0, null),
+            )
+        )
+
+        val entries = db.foodEntryDao().getActive(userId)
+        assertEquals(2, entries.size)
+        assertEquals(entries[0].timestamp, entries[1].timestamp)
+    }
+
+    @Test
+    fun `addFoodGroup returns distinct mealIds for separate calls`() = runTest {
+        val id1 = repo.addFoodGroup(listOf(NewFoodItem("A", 100.0, 0.0, 0.0, 0.0, null)))
+        val id2 = repo.addFoodGroup(listOf(NewFoodItem("B", 200.0, 0.0, 0.0, 0.0, null)))
+
+        assertTrue("Two separate calls should produce different mealIds", id1 != id2)
+    }
+
+    @Test
+    fun `addFoodGroup entries are not visible under a different userId`() = runTest {
+        repo.addFoodGroup(listOf(NewFoodItem("Rice", 200.0, 4.0, 1.0, 44.0, null)))
+
+        val other = db.foodEntryDao().getActive("other-user")
+        assertTrue(other.isEmpty())
+    }
+
+    // -----------------------------------------------------------------------
+    // getFoodEntry
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `getFoodEntry returns the entry with the given id`() = runTest {
+        val mealId = repo.addFoodGroup(listOf(NewFoodItem("Oats", 300.0, 10.0, 5.0, 55.0, null)))
+        val inserted = db.foodEntryDao().getActive(userId).first()
+
+        val fetched = repo.getFoodEntry(inserted.id)
+        assertNotNull(fetched)
+        assertEquals("Oats", fetched!!.name)
+        assertEquals(mealId, fetched.mealId)
+    }
+
+    @Test
+    fun `getFoodEntry returns null for an unknown id`() = runTest {
+        val fetched = repo.getFoodEntry(9999L)
+        assertNull(fetched)
+    }
+
+    // -----------------------------------------------------------------------
+    // updateFood
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `updateFood changes name and macros`() = runTest {
+        val mealId = repo.addFoodGroup(listOf(NewFoodItem("Apple", 95.0, 0.5, 0.3, 25.0, null)))
+        val original = db.foodEntryDao().getActive(userId).first()
+
+        repo.updateFood(original.id, "Updated Apple", 100.0, 1.0, 0.5, 26.0, 150.0)
+
+        val updated = db.foodEntryDao().getById(original.id)!!
+        assertEquals("Updated Apple", updated.name)
+        assertEquals(100.0, updated.kcal, 0.001)
+        assertEquals(1.0, updated.proteinG, 0.001)
+        assertEquals(0.5, updated.fatG, 0.001)
+        assertEquals(26.0, updated.carbG, 0.001)
+        assertEquals(150.0, updated.grams, 0.001)
+    }
+
+    @Test
+    fun `updateFood preserves userId, timestamp, createdAt, mealId, and rawText`() = runTest {
+        val mealId = repo.addFoodGroup(listOf(NewFoodItem("Apple", 95.0, 0.5, 0.3, 25.0, null)))
+        val original = db.foodEntryDao().getActive(userId).first()
+
+        repo.updateFood(original.id, "Updated Apple", 100.0, 1.0, 0.5, 26.0, null)
+
+        val updated = db.foodEntryDao().getById(original.id)!!
+        assertEquals(original.userId, updated.userId)
+        assertEquals(original.timestamp, updated.timestamp)
+        assertEquals(original.createdAt, updated.createdAt)
+        assertEquals(mealId, updated.mealId)
+        // rawText must not change
+        assertEquals("Apple", updated.rawText)
+    }
+
+    @Test
+    fun `updateFood sets updatedAt to clock instant`() = runTest {
+        repo.addFoodGroup(listOf(NewFoodItem("Apple", 95.0, 0.5, 0.3, 25.0, null)))
+        val original = db.foodEntryDao().getActive(userId).first()
+
+        repo.updateFood(original.id, "Updated", 100.0, 0.0, 0.0, 0.0, null)
+
+        val updated = db.foodEntryDao().getById(original.id)!!
+        assertEquals(fixedNow, updated.updatedAt)
+    }
+
+    @Test
+    fun `updateFood is a no-op for unknown id`() = runTest {
+        // Should not throw
+        repo.updateFood(9999L, "x", 100.0, 0.0, 0.0, 0.0, null)
+        // DB remains empty
+        assertTrue(db.foodEntryDao().getActive(userId).isEmpty())
+    }
+
+    // -----------------------------------------------------------------------
+    // softDeleteMeal
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `softDeleteMeal soft-deletes all rows in the group`() = runTest {
+        val mealId = repo.addFoodGroup(
+            listOf(
+                NewFoodItem("Apple", 95.0, 0.5, 0.3, 25.0, null),
+                NewFoodItem("Banana", 105.0, 1.3, 0.4, 27.0, null),
+            )
+        )
+
+        repo.softDeleteMeal(mealId)
+
+        val active = db.foodEntryDao().getActive(userId)
+        assertTrue("All meal entries should be soft-deleted", active.isEmpty())
+    }
+
+    @Test
+    fun `softDeleteMeal does not affect rows from other groups`() = runTest {
+        val mealId1 = repo.addFoodGroup(
+            listOf(
+                NewFoodItem("Apple", 95.0, 0.5, 0.3, 25.0, null),
+                NewFoodItem("Banana", 105.0, 1.3, 0.4, 27.0, null),
+            )
+        )
+        val mealId2 = repo.addFoodGroup(
+            listOf(
+                NewFoodItem("Chicken", 250.0, 30.0, 5.0, 0.0, null),
+            )
+        )
+
+        repo.softDeleteMeal(mealId1)
+
+        val active = db.foodEntryDao().getActive(userId)
+        assertEquals(1, active.size)
+        assertEquals(mealId2, active[0].mealId)
+        assertEquals("Chicken", active[0].name)
+    }
+
+    @Test
+    fun `softDeleteMeal sets deletedAt to clock instant for each row`() = runTest {
+        val mealId = repo.addFoodGroup(
+            listOf(
+                NewFoodItem("A", 100.0, 0.0, 0.0, 0.0, null),
+                NewFoodItem("B", 200.0, 0.0, 0.0, 0.0, null),
+            )
+        )
+
+        repo.softDeleteMeal(mealId)
+
+        val all = db.foodEntryDao().getAll(userId)
+        assertTrue(all.all { it.deletedAt == fixedNow })
+    }
+
+    // -----------------------------------------------------------------------
+    // Helpers
+    // -----------------------------------------------------------------------
+
+    private fun makeProfile(uid: String) = UserProfileEntity(
+        userId = uid,
+        sex = Sex.MALE,
+        birthYear = 1990,
+        heightCm = 175.0,
+        activityLevel = ActivityLevel.MODERATE,
+        goalRateKgPerWeek = -0.25,
+        goalWeightKg = 75.0,
+        dayStartHour = 0,
+        createdAt = fixedNow,
+        updatedAt = fixedNow,
+    )
+}

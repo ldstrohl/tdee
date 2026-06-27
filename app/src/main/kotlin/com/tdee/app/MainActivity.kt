@@ -13,11 +13,15 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.tdee.app.addfood.AddFoodScreen
 import com.tdee.app.addfood.AddFoodViewModel
+import com.tdee.app.addfood.EditFoodEntryScreen
+import com.tdee.app.addfood.EditFoodEntryViewModel
 import com.tdee.app.addfood.ParseConfirmScreen
 import com.tdee.app.addfood.ParseConfirmViewModel
 import com.tdee.app.addweight.AddWeightScreen
@@ -111,6 +115,7 @@ class MainActivity : ComponentActivity() {
                                         onOpenSettings = { navController.navigate("settings") },
                                         onOpenInsights = { navController.navigate("insights") },
                                         onCheckin = { navController.navigate("checkin") },
+                                        onEditFood = { id -> navController.navigate("edit_food/$id") },
                                     )
                                 }
 
@@ -178,6 +183,21 @@ class MainActivity : ComponentActivity() {
                                     val vm: AddWeightViewModel =
                                         viewModel(factory = AddWeightViewModel.Factory)
                                     AddWeightScreen(
+                                        viewModel = vm,
+                                        onDone = { navController.popBackStack() },
+                                    )
+                                }
+
+                                composable(
+                                    route = "edit_food/{foodId}",
+                                    arguments = listOf(
+                                        navArgument("foodId") { type = NavType.LongType }
+                                    ),
+                                ) { backStackEntry ->
+                                    val foodId = backStackEntry.arguments!!.getLong("foodId")
+                                    val vm: EditFoodEntryViewModel =
+                                        viewModel(factory = EditFoodEntryViewModel.factory(foodId))
+                                    EditFoodEntryScreen(
                                         viewModel = vm,
                                         onDone = { navController.popBackStack() },
                                     )

@@ -12,7 +12,7 @@ import androidx.room.TypeConverters
         TargetPeriodEntity::class,
         WeightTrendCacheEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)

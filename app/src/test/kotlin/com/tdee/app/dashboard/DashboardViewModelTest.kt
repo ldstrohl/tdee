@@ -5,6 +5,7 @@ import com.tdee.app.data.AppDatabase
 import com.tdee.app.data.CurrentUser
 import com.tdee.app.data.FoodEntryEntity
 import com.tdee.app.data.FoodSourceDb
+import com.tdee.app.data.NewFoodItem
 import com.tdee.app.data.TdeeRepository
 import com.tdee.app.data.UserProfileEntity
 import com.tdee.app.data.WeightEntryEntity
@@ -397,6 +398,61 @@ class DashboardViewModelTest {
 
         assertEquals(1850, loaded.calorieTargetKcal)
         assertEquals(committed, loaded.macroTargets)
+    }
+
+    // -----------------------------------------------------------------------
+    // 9. deleteMeal
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `deleteMeal soft-deletes all entries in the group`() = runTest {
+        // Insert a meal group on today's log-day via the repo.
+        val mealId = repo.addFoodGroup(
+            listOf(
+                NewFoodItem("Apple", 95.0, 0.5, 0.3, 25.0, null),
+                NewFoodItem("Banana", 105.0, 1.3, 0.4, 27.0, null),
+            )
+        )
+
+        val vm = DashboardViewModel(repo)
+
+        // Wait for the two entries to appear in today's food.
+        val withFood = vm.todayFoods
+            .filter { it.size == 2 }
+            .first()
+        assertEquals(2, withFood.size)
+
+        vm.deleteMeal(mealId)
+
+        // After delete, today's food list should be empty.
+        val afterDelete = vm.todayFoods
+            .filter { it.isEmpty() }
+            .first()
+        assertTrue(afterDelete.isEmpty())
+    }
+
+    @Test
+    fun `deleteMeal does not affect entries from other groups`() = runTest {
+        val mealId1 = repo.addFoodGroup(
+            listOf(NewFoodItem("Apple", 95.0, 0.5, 0.3, 25.0, null))
+        )
+        repo.addFoodGroup(
+            listOf(NewFoodItem("Chicken", 250.0, 30.0, 5.0, 0.0, null))
+        )
+
+        val vm = DashboardViewModel(repo)
+
+        // Wait for two entries to appear.
+        vm.todayFoods.filter { it.size == 2 }.first()
+
+        vm.deleteMeal(mealId1)
+
+        // Only the second group's entry should remain.
+        val afterDelete = vm.todayFoods
+            .filter { it.size == 1 }
+            .first()
+        assertEquals(1, afterDelete.size)
+        assertEquals("Chicken", afterDelete[0].name)
     }
 
     @Test

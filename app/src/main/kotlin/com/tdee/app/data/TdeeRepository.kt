@@ -18,7 +18,18 @@ import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import java.util.UUID
 import kotlin.random.Random
+
+/** Input type used by [TdeeRepository.addFoodGroup] and [TdeeRepository.addFood] callers. */
+data class NewFoodItem(
+    val name: String,
+    val kcal: Double,
+    val proteinG: Double,
+    val fatG: Double,
+    val carbG: Double,
+    val grams: Double?,
+)
 
 /**
  * Integration layer between the Room data layer and the domain TDEE engine.
@@ -376,18 +387,19 @@ class TdeeRepository(
         fatG: Double,
         carbG: Double,
         grams: Double? = null,
+        mealId: String? = null,
         loggedDate: LocalDate? = null,
     ) = withContext(Dispatchers.IO) {
         val uid = currentUser.userId()
         val profileEntity = profileDao.get(uid)
         val dayStartHour = profileEntity?.dayStartHour ?: 0
+        val now = clock.instant()
         val timestamp = if (loggedDate != null) {
             loggedDate.atStartOfDay(zone).toInstant()
                 .plusSeconds((dayStartHour + 12) * 3600L)
         } else {
-            clock.instant()
+            now
         }
-        val createdAt = clock.instant()
         foodDao.insert(
             FoodEntryEntity(
                 userId = uid,
@@ -402,10 +414,100 @@ class TdeeRepository(
                 fatG = fatG,
                 carbG = carbG,
                 sourceDb = FoodSourceDb.MANUAL,
-                createdAt = createdAt,
-                updatedAt = createdAt,
+                mealId = mealId,
+                createdAt = now,
+                updatedAt = now,
             )
         )
+    }
+
+    /**
+     * Inserts a group of food items under a single shared meal ID. All items get the same
+     * timestamp so they sort together, and can later be deleted as a unit via [softDeleteMeal].
+     *
+     * @param items  the items to insert; an empty list is a no-op.
+     * @param loggedDate  when non-null, backdates entries to that log-day (noon in [zone]).
+     * @return the generated meal ID (a random UUID string).
+     */
+    suspend fun addFoodGroup(
+        items: List<NewFoodItem>,
+        loggedDate: LocalDate? = null,
+    ): String = withContext(Dispatchers.IO) {
+        if (items.isEmpty()) return@withContext UUID.randomUUID().toString()
+        val uid = currentUser.userId()
+        val profileEntity = profileDao.get(uid)
+        val dayStartHour = profileEntity?.dayStartHour ?: 0
+        val now = clock.instant()
+        val timestamp = if (loggedDate != null) {
+            loggedDate.atStartOfDay(zone).toInstant()
+                .plusSeconds((dayStartHour + 12) * 3600L)
+        } else {
+            now
+        }
+        val mealId = UUID.randomUUID().toString()
+        for (item in items) {
+            foodDao.insert(
+                FoodEntryEntity(
+                    userId = uid,
+                    timestamp = timestamp,
+                    rawText = item.name,
+                    name = item.name,
+                    quantity = 1.0,
+                    unit = "serving",
+                    grams = item.grams ?: 0.0,
+                    kcal = item.kcal,
+                    proteinG = item.proteinG,
+                    fatG = item.fatG,
+                    carbG = item.carbG,
+                    sourceDb = FoodSourceDb.MANUAL,
+                    mealId = mealId,
+                    createdAt = now,
+                    updatedAt = now,
+                )
+            )
+        }
+        mealId
+    }
+
+    /** Returns the [FoodEntryEntity] with the given [id], or null if not found. */
+    suspend fun getFoodEntry(id: Long): FoodEntryEntity? = withContext(Dispatchers.IO) {
+        foodDao.getById(id)
+    }
+
+    /**
+     * Updates the editable fields of the food entry with [id]. If no entry with that id exists,
+     * this is a no-op. Preserves [FoodEntryEntity.rawText], [FoodEntryEntity.userId],
+     * [FoodEntryEntity.timestamp], [FoodEntryEntity.createdAt], [FoodEntryEntity.mealId],
+     * and [FoodEntryEntity.deletedAt]; bumps [FoodEntryEntity.updatedAt] to [clock]'s instant.
+     */
+    suspend fun updateFood(
+        id: Long,
+        name: String,
+        kcal: Double,
+        proteinG: Double,
+        fatG: Double,
+        carbG: Double,
+        grams: Double?,
+    ) = withContext(Dispatchers.IO) {
+        val existing = foodDao.getById(id) ?: return@withContext
+        foodDao.update(
+            existing.copy(
+                name = name,
+                kcal = kcal,
+                proteinG = proteinG,
+                fatG = fatG,
+                carbG = carbG,
+                grams = grams ?: existing.grams,
+                updatedAt = clock.instant(),
+            )
+        )
+    }
+
+    /**
+     * Soft-deletes all food entries belonging to [mealId] for the current user.
+     */
+    suspend fun softDeleteMeal(mealId: String) = withContext(Dispatchers.IO) {
+        foodDao.softDeleteByMeal(currentUser.userId(), mealId, clock.instant())
     }
 
     /**
