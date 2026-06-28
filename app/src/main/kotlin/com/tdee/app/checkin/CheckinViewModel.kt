@@ -8,6 +8,9 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.tdee.app.TdeeApplication
 import com.tdee.app.data.CheckinProposal
 import com.tdee.app.data.TdeeRepository
+import com.tdee.domain.Macro
+import com.tdee.domain.MacroBalancer
+import com.tdee.domain.MacroGrams
 import com.tdee.domain.Targets
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -30,6 +33,8 @@ data class CheckinFormState(
     val proteinG: String = "",
     val fatG: String = "",
     val carbG: String = "",
+    /** Macros the user pinned: kept fixed while the others rebalance to refill kcal. */
+    val locked: Set<Macro> = emptySet(),
 ) {
     private fun String.parsed(): Double? =
         toDoubleOrNull()?.takeIf { it.isFinite() && it >= 0.0 }
@@ -38,6 +43,17 @@ data class CheckinFormState(
     val proteinValue: Double? get() = proteinG.parsed()
     val fatValue: Double? get() = fatG.parsed()
     val carbValue: Double? get() = carbG.parsed()
+
+    /** Macro grams when all three parse, else null. */
+    fun macros(): MacroGrams? {
+        val p = proteinValue ?: return null
+        val f = fatValue ?: return null
+        val c = carbValue ?: return null
+        return MacroGrams(p, f, c)
+    }
+
+    /** Energy implied by the current macros at 4/9/4, or null when any macro is invalid. */
+    val macrosKcal: Double? get() = macros()?.totalKcal()
 
     /** True only when every field is a valid non-negative number. */
     val canSave: Boolean
@@ -108,10 +124,57 @@ class CheckinViewModel(private val repo: TdeeRepository) : ViewModel() {
     // Field updaters
     // -----------------------------------------------------------------------
 
-    fun setCalorie(v: String) = _form.update { it.copy(calorieKcal = v) }
-    fun setProtein(v: String) = _form.update { it.copy(proteinG = v) }
-    fun setFat(v: String) = _form.update { it.copy(fatG = v) }
-    fun setCarb(v: String) = _form.update { it.copy(carbG = v) }
+    // Editing a macro holds the calorie target fixed and rebalances the OTHER unlocked macros
+    // (outline note 6). The edited macro and any locked macros keep their typed grams. Rebalancing
+    // is skipped (the raw text is just stored) until the calorie field and all macros parse.
+    fun setProtein(v: String) = editMacro(Macro.PROTEIN) { it.copy(proteinG = v) }
+    fun setFat(v: String) = editMacro(Macro.FAT) { it.copy(fatG = v) }
+    fun setCarb(v: String) = editMacro(Macro.CARB) { it.copy(carbG = v) }
+
+    /** Editing calories rebalances all unlocked macros to the new kcal, preserving locked grams. */
+    fun setCalorie(v: String) = _form.update { form0 ->
+        val form = form0.copy(calorieKcal = v)
+        val cal = form.calorieValue ?: return@update form
+        val current = form.macros() ?: return@update form
+        writeUnlocked(form, MacroBalancer.rebalance(cal, current, form.locked))
+    }
+
+    /** Pin/unpin a macro. Locked macros keep their grams while others rebalance. */
+    fun toggleLock(m: Macro) = _form.update { form ->
+        form.copy(locked = if (m in form.locked) form.locked - m else form.locked + m)
+    }
+
+    /**
+     * Set the calorie target to the macros' implied kcal. Resolves the over-constrained case (e.g.
+     * two macros locked and the third edited) where the macros no longer sum to the target.
+     */
+    fun alignCaloriesToMacros() = _form.update { form ->
+        val k = form.macrosKcal ?: return@update form
+        form.copy(calorieKcal = fmt(k))
+    }
+
+    private fun editMacro(edited: Macro, apply: (CheckinFormState) -> CheckinFormState) =
+        _form.update { form0 ->
+            val form = apply(form0)
+            val cal = form.calorieValue ?: return@update form
+            val current = form.macros() ?: return@update form
+            val balanced = MacroBalancer.rebalance(cal, current, form.locked + edited)
+            writeUnlocked(form, balanced, keepAlso = edited)
+        }
+
+    /** Rewrite only the macro fields free to move; keep locked (and any [keepAlso]) typed values. */
+    private fun writeUnlocked(
+        form: CheckinFormState,
+        balanced: MacroGrams,
+        keepAlso: Macro? = null,
+    ): CheckinFormState {
+        fun keep(m: Macro) = m in form.locked || m == keepAlso
+        return form.copy(
+            proteinG = if (keep(Macro.PROTEIN)) form.proteinG else fmt(balanced.proteinG),
+            fatG = if (keep(Macro.FAT)) form.fatG else fmt(balanced.fatG),
+            carbG = if (keep(Macro.CARB)) form.carbG else fmt(balanced.carbG),
+        )
+    }
 
     // -----------------------------------------------------------------------
     // Accept / save

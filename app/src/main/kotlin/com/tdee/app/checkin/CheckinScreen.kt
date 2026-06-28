@@ -12,6 +12,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -26,6 +27,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.tdee.app.data.CheckinProposal
+import com.tdee.domain.Macro
+import kotlin.math.abs
 
 @Composable
 fun CheckinScreen(
@@ -147,6 +150,12 @@ private fun TargetsSection(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text("Targets", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Edit a macro and the others rebalance to keep the calorie target. " +
+                    "Lock a macro to hold it while the rest adjust.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
 
             TargetField(
                 label = "Calories (kcal)",
@@ -161,6 +170,8 @@ private fun TargetsSection(
                 proposed = "%,d".format(p.proposedTargets.proteinG.toInt()),
                 value = form.proteinG,
                 onValueChange = viewModel::setProtein,
+                locked = Macro.PROTEIN in form.locked,
+                onToggleLock = { viewModel.toggleLock(Macro.PROTEIN) },
             )
             TargetField(
                 label = "Fat (g)",
@@ -168,6 +179,8 @@ private fun TargetsSection(
                 proposed = "%,d".format(p.proposedTargets.fatG.toInt()),
                 value = form.fatG,
                 onValueChange = viewModel::setFat,
+                locked = Macro.FAT in form.locked,
+                onToggleLock = { viewModel.toggleLock(Macro.FAT) },
             )
             TargetField(
                 label = "Carbs (g)",
@@ -175,7 +188,32 @@ private fun TargetsSection(
                 proposed = "%,d".format(p.proposedTargets.carbG.toInt()),
                 value = form.carbG,
                 onValueChange = viewModel::setCarb,
+                locked = Macro.CARB in form.locked,
+                onToggleLock = { viewModel.toggleLock(Macro.CARB) },
             )
+
+            HorizontalDivider()
+
+            val macrosKcal = form.macrosKcal
+            val calTarget = form.calorieValue
+            SummaryRow(
+                "Macros total",
+                macrosKcal?.let { "%,d kcal".format(it.toInt()) } ?: "—",
+            )
+            // Over-constrained (e.g. two locked + the third edited): macros no longer sum to the
+            // target. Surface the implied kcal and offer to update the calorie target — never
+            // override it silently.
+            if (macrosKcal != null && calTarget != null && abs(macrosKcal - calTarget) > 10) {
+                Text(
+                    "These macros add up to ${macrosKcal.toInt()} kcal, " +
+                        "not the ${calTarget.toInt()} kcal target.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                TextButton(onClick = viewModel::alignCaloriesToMacros) {
+                    Text("Set calories to ${macrosKcal.toInt()}")
+                }
+            }
         }
     }
 }
@@ -187,6 +225,8 @@ private fun TargetField(
     proposed: String,
     value: String,
     onValueChange: (String) -> Unit,
+    locked: Boolean? = null,
+    onToggleLock: () -> Unit = {},
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(
@@ -194,14 +234,27 @@ private fun TargetField(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        OutlinedTextField(
-            value = value,
-            onValueChange = onValueChange,
-            label = { Text(label) },
-            isError = value.toDoubleOrNull()?.let { it < 0.0 } ?: true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            singleLine = true,
+        Row(
             modifier = Modifier.fillMaxWidth(),
-        )
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            OutlinedTextField(
+                value = value,
+                onValueChange = onValueChange,
+                label = { Text(label) },
+                readOnly = locked == true,
+                isError = value.toDoubleOrNull()?.let { it < 0.0 } ?: true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+                modifier = Modifier.weight(1f),
+            )
+            if (locked != null) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Checkbox(checked = locked, onCheckedChange = { onToggleLock() })
+                    Text("Lock", style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
     }
 }

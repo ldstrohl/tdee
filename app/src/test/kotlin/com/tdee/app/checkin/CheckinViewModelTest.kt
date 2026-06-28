@@ -10,6 +10,7 @@ import com.tdee.app.data.UserProfileEntity
 import com.tdee.app.data.WeightEntryEntity
 import com.tdee.app.data.WeightSource
 import com.tdee.domain.ActivityLevel
+import com.tdee.domain.Macro
 import com.tdee.domain.Sex
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -34,6 +35,7 @@ import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
+import kotlin.math.abs
 
 /**
  * Unit tests for [CheckinViewModel] (Module 8).
@@ -191,13 +193,15 @@ class CheckinViewModelTest {
     // -----------------------------------------------------------------------
 
     @Test
-    fun `editing a field then accepting persists the edited value`() = runTest {
+    fun `editing fields then accepting persists the edited values`() = runTest {
         awaitLoaded()
 
+        // With rebalancing on (Phase 3), editing a macro adjusts the unlocked others, so pinning
+        // specific protein + fat uses locks; carb then absorbs the remainder of the 1750 kcal target.
         vm.setCalorie("1750")
         vm.setProtein("180")
+        vm.toggleLock(Macro.PROTEIN)
         vm.setFat("50")
-        vm.setCarb("140")
         assertTrue(vm.form.value.canSave)
 
         vm.accept()
@@ -207,7 +211,8 @@ class CheckinViewModelTest {
         assertEquals(1750.0, active.calorieTargetKcal, 0.0)
         assertEquals(180.0, active.proteinG, 0.0)
         assertEquals(50.0, active.fatG, 0.0)
-        assertEquals(140.0, active.carbG, 0.0)
+        // carb = (1750 − 180·4 − 50·9) / 4 = (1750 − 720 − 450) / 4 = 145
+        assertEquals(145.0, active.carbG, 0.0)
     }
 
     @Test
@@ -254,5 +259,92 @@ class CheckinViewModelTest {
         vm.setCalorie("abc")
         vm.accept()
         assertFalse("saved should stay false on invalid input", vm.saved.value)
+    }
+
+    // -----------------------------------------------------------------------
+    // 5. Macro rebalancing (Phase 3): editing a macro holds calories fixed
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `editing a macro rebalances the others to keep the calorie target`() = runTest {
+        awaitLoaded()
+        val target = vm.form.value.calorieValue!!
+
+        vm.setProtein("200")
+        val f = vm.form.value
+
+        assertEquals("edited macro keeps its typed value", "200", f.proteinG)
+        assertTrue("form stays saveable after rebalance", f.canSave)
+        // The macros still sum to the calorie target (within whole-gram rounding).
+        assertTrue(
+            "macros ${f.macrosKcal} should still match target $target",
+            abs(f.macrosKcal!! - target) <= 10.0,
+        )
+    }
+
+    @Test
+    fun `a locked macro is held while the others rebalance`() = runTest {
+        awaitLoaded()
+        val target = vm.form.value.calorieValue!!
+
+        vm.toggleLock(Macro.FAT)
+        val fatBefore = vm.form.value.fatG
+
+        vm.setProtein("220")
+        val f = vm.form.value
+
+        assertEquals("locked fat is unchanged", fatBefore, f.fatG)
+        assertEquals("edited protein keeps its value", "220", f.proteinG)
+        assertTrue(
+            "carb absorbs the remainder so macros match the target",
+            abs(f.macrosKcal!! - target) <= 10.0,
+        )
+    }
+
+    @Test
+    fun `editing calories rebalances all unlocked macros to the new kcal`() = runTest {
+        awaitLoaded()
+
+        vm.setCalorie("2200")
+        val f = vm.form.value
+
+        assertEquals("2200", f.calorieKcal)
+        assertTrue("form stays saveable", f.canSave)
+        assertTrue(
+            "macros ${f.macrosKcal} rebalance to the new 2200 target",
+            abs(f.macrosKcal!! - 2200.0) <= 10.0,
+        )
+    }
+
+    @Test
+    fun `over-constrained edit surfaces the mismatch and align fixes calories`() = runTest {
+        awaitLoaded()
+        val target = vm.form.value.calorieValue!!
+
+        // Lock two macros, then push the third well past its share — the macros can no longer
+        // sum to the calorie target.
+        vm.toggleLock(Macro.FAT)
+        vm.toggleLock(Macro.CARB)
+        val fatBefore = vm.form.value.fatG
+        val carbBefore = vm.form.value.carbG
+
+        vm.setProtein("300")
+        val f = vm.form.value
+
+        assertEquals("locked fat held", fatBefore, f.fatG)
+        assertEquals("locked carb held", carbBefore, f.carbG)
+        assertEquals("300", f.proteinG)
+        assertTrue(
+            "macros now diverge from the target",
+            abs(f.macrosKcal!! - target) > 10.0,
+        )
+
+        vm.alignCaloriesToMacros()
+        val f2 = vm.form.value
+        assertEquals(
+            "align sets the calorie target to the macros' implied kcal",
+            f2.macrosKcal!!.toInt(),
+            f2.calorieValue!!.toInt(),
+        )
     }
 }
