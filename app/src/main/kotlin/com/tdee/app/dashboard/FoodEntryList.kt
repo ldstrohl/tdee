@@ -29,7 +29,7 @@ import com.tdee.app.data.FoodEntryEntity
 
 internal sealed interface FoodDisplayItem {
     data class Standalone(val entry: FoodEntryEntity) : FoodDisplayItem
-    data class Group(val mealId: String, val items: List<FoodEntryEntity>) : FoodDisplayItem
+    data class Group(val mealId: String, val items: List<FoodEntryEntity>, val mealName: String?) : FoodDisplayItem
 }
 
 internal fun List<FoodEntryEntity>.toDisplayItems(): List<FoodDisplayItem> {
@@ -41,7 +41,7 @@ internal fun List<FoodEntryEntity>.toDisplayItems(): List<FoodDisplayItem> {
         if (mid == null) {
             result.add(FoodDisplayItem.Standalone(entry))
         } else if (seenMeals.add(mid)) {
-            result.add(FoodDisplayItem.Group(mid, mealItemsMap[mid]!!))
+            result.add(FoodDisplayItem.Group(mid, mealItemsMap[mid]!!, mealItemsMap[mid]!!.firstOrNull()?.mealName))
         }
     }
     return result
@@ -148,7 +148,7 @@ internal fun FoodEntryList(
             }
 
             is FoodDisplayItem.Group -> {
-                val isExpanded = expandedState.getOrDefault(displayItem.mealId, true)
+                val isExpanded = expandedState.getOrDefault(displayItem.mealId, false)
                 val totalKcal = displayItem.items.sumOf { it.kcal }.toInt()
                 Row(
                     modifier = Modifier
@@ -161,7 +161,7 @@ internal fun FoodEntryList(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        "Meal · ${displayItem.items.size} items",
+                        displayItem.mealName ?: "Meal · ${displayItem.items.size} items",
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     Row(verticalAlignment = Alignment.CenterVertically) {

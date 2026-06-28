@@ -175,13 +175,13 @@ class ParseConfirmViewModel(
     // Save
     // -----------------------------------------------------------------------
 
-    fun saveAll() {
+    fun saveAll(mealName: String? = null) {
         val valid = _state.value.items.filter { it.isValid }
         if (valid.isEmpty()) return
         viewModelScope.launch {
             val foodItems = validItems()
             val date = selectedDate.value.takeUnless { it == LocalDate.now() }
-            repo.addFoodGroup(foodItems, date)
+            repo.addFoodGroup(foodItems, date, mealName?.trim()?.takeIf { it.isNotBlank() })
             _saved.value = true
         }
     }
@@ -194,6 +194,21 @@ class ParseConfirmViewModel(
         viewModelScope.launch {
             repo.saveMeal(name.trim(), items)
             _mealSaved.value = true
+        }
+    }
+
+    /** Saves to the library AND adds the group with [name] as the meal name, then navigates away. */
+    fun saveMealAndAdd(name: String) {
+        if (name.isBlank()) return
+        val items = validItems()
+        if (items.isEmpty()) return
+        viewModelScope.launch {
+            val trimmed = name.trim()
+            val date = selectedDate.value.takeUnless { it == LocalDate.now() }
+            repo.saveMeal(trimmed, items)
+            repo.addFoodGroup(items, date, trimmed)
+            _mealSaved.value = true
+            _saved.value = true
         }
     }
 

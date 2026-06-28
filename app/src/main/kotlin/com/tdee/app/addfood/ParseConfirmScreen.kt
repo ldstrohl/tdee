@@ -59,6 +59,10 @@ fun ParseConfirmScreen(
     var showDatePicker by remember { mutableStateOf(false) }
     var showSaveAsMealDialog by remember { mutableStateOf(false) }
     var mealName by remember { mutableStateOf("") }
+    var mealNameInput by remember { mutableStateOf(state.text) }
+    LaunchedEffect(state.text) {
+        if (mealNameInput.isBlank() && state.text.isNotBlank()) mealNameInput = state.text
+    }
 
     val datePickerState = rememberDatePickerState(
         initialSelectedDateMillis = selectedDate
@@ -96,7 +100,7 @@ fun ParseConfirmScreen(
     if (showSaveAsMealDialog) {
         AlertDialog(
             onDismissRequest = { showSaveAsMealDialog = false; mealName = "" },
-            title = { Text("Save as meal") },
+            title = { Text("Save meal & add") },
             text = {
                 OutlinedTextField(
                     value = mealName,
@@ -108,7 +112,7 @@ fun ParseConfirmScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        viewModel.saveAsMeal(mealName)
+                        viewModel.saveMealAndAdd(mealName)
                         showSaveAsMealDialog = false
                         mealName = ""
                     },
@@ -132,7 +136,14 @@ fun ParseConfirmScreen(
             .padding(horizontal = 16.dp, vertical = 24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text("Describe a meal", style = MaterialTheme.typography.headlineSmall)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Describe a meal", style = MaterialTheme.typography.headlineSmall)
+            TextButton(onClick = onDone) { Text("Back") }
+        }
 
         // Date selector — defaults to today; tap to log to a prior day.
         val dateLabel = if (selectedDate == today) "Today" else
@@ -221,6 +232,14 @@ fun ParseConfirmScreen(
             Text("Add item")
         }
 
+        OutlinedTextField(
+            value = mealNameInput,
+            onValueChange = { mealNameInput = it },
+            label = { Text("Meal name") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+        )
+
         if (mealSaved) {
             Text(
                 "Meal saved to library.",
@@ -238,14 +257,14 @@ fun ParseConfirmScreen(
                 enabled = state.canSave,
                 modifier = Modifier.weight(1f),
             ) {
-                Text("Save as meal")
+                Text("Save meal & add")
             }
             Button(
-                onClick = viewModel::saveAll,
+                onClick = { viewModel.saveAll(mealNameInput) },
                 enabled = state.canSave,
                 modifier = Modifier.weight(1f),
             ) {
-                Text("Save all")
+                Text("Add as meal")
             }
         }
     }

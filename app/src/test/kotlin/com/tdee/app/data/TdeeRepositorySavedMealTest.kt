@@ -244,6 +244,51 @@ class TdeeRepositorySavedMealTest {
     }
 
     // -----------------------------------------------------------------------
+    // mealName propagation (N3)
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `logSavedMeal stamps the saved meal name onto the logged group`() = runTest {
+        val savedId = repo.saveMeal(
+            "Lunch",
+            listOf(NewFoodItem("Sandwich", 400.0, 20.0, 15.0, 45.0, null)),
+        )
+
+        repo.logSavedMeal(savedId)
+
+        val entries = db.foodEntryDao().getActive(userId)
+        assertEquals(1, entries.size)
+        assertEquals("Lunch", entries[0].mealName)
+    }
+
+    @Test
+    fun `repeatMeal preserves mealName from the source group`() = runTest {
+        val originalMealId = repo.addFoodGroup(
+            listOf(NewFoodItem("Oats", 300.0, 10.0, 5.0, 55.0, null)),
+            mealName = "Morning Oats",
+        )
+
+        val newMealId = repo.repeatMeal(originalMealId)
+
+        val repeated = db.foodEntryDao().getActive(userId).filter { it.mealId == newMealId }
+        assertEquals(1, repeated.size)
+        assertEquals("Morning Oats", repeated[0].mealName)
+    }
+
+    @Test
+    fun `repeatMeal with null mealName keeps mealName null`() = runTest {
+        val originalMealId = repo.addFoodGroup(
+            listOf(NewFoodItem("Egg", 70.0, 6.0, 5.0, 0.0, null)),
+        )
+
+        val newMealId = repo.repeatMeal(originalMealId)
+
+        val repeated = db.foodEntryDao().getActive(userId).filter { it.mealId == newMealId }
+        assertEquals(1, repeated.size)
+        assertNull(repeated[0].mealName)
+    }
+
+    // -----------------------------------------------------------------------
     // foodEntriesForDate
     // -----------------------------------------------------------------------
 

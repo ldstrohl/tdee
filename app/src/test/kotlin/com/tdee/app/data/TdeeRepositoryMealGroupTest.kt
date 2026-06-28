@@ -275,6 +275,37 @@ class TdeeRepositoryMealGroupTest {
     }
 
     // -----------------------------------------------------------------------
+    // mealName persistence (N3)
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `addFoodGroup with mealName stamps all rows with that name`() = runTest {
+        repo.addFoodGroup(
+            listOf(
+                NewFoodItem("Apple", 95.0, 0.5, 0.3, 25.0, null),
+                NewFoodItem("Banana", 105.0, 1.3, 0.4, 27.0, null),
+            ),
+            mealName = "Breakfast",
+        )
+
+        val entries = db.foodEntryDao().getActive(userId)
+        assertEquals(2, entries.size)
+        assertEquals("Breakfast", entries[0].mealName)
+        assertEquals("Breakfast", entries[1].mealName)
+    }
+
+    @Test
+    fun `addFoodGroup without mealName leaves mealName null on all rows`() = runTest {
+        repo.addFoodGroup(
+            listOf(NewFoodItem("Oats", 300.0, 10.0, 5.0, 55.0, null)),
+        )
+
+        val entries = db.foodEntryDao().getActive(userId)
+        assertEquals(1, entries.size)
+        assertNull(entries[0].mealName)
+    }
+
+    // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
 

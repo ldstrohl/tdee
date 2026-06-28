@@ -288,6 +288,64 @@ class ParseConfirmViewModelTest {
     }
 
     // -----------------------------------------------------------------------
+    // saveAll(mealName) stamps mealName on the group (N3 / N5)
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `saveAll with mealName stamps that name on all group entries`() = runTest {
+        vm.setText("apple and banana")
+        vm.parse()
+        vm.setKcal(0, "95")
+        vm.setKcal(1, "105")
+
+        vm.saveAll("Lunch")
+        vm.saved.filter { it }.first()
+
+        val entries = repo.todayFoodEntries()
+        assertEquals(2, entries.size)
+        assertTrue(entries.all { it.mealName == "Lunch" })
+    }
+
+    @Test
+    fun `saveAll with blank mealName stores null mealName`() = runTest {
+        vm.setText("apple")
+        vm.parse()
+        vm.setKcal(0, "95")
+
+        vm.saveAll("   ")
+        vm.saved.filter { it }.first()
+
+        val entries = repo.todayFoodEntries()
+        assertEquals(1, entries.size)
+        assertNull(entries[0].mealName)
+    }
+
+    // -----------------------------------------------------------------------
+    // saveMealAndAdd saves to library AND adds group (N5)
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `saveMealAndAdd saves to library and adds group with that mealName`() = runTest {
+        vm.setText("oats and egg")
+        vm.parse()
+        vm.setKcal(0, "300")
+        vm.setKcal(1, "70")
+
+        vm.saveMealAndAdd("Breakfast")
+        vm.saved.filter { it }.first()
+
+        // Group was added to today's log
+        val entries = repo.todayFoodEntries()
+        assertEquals(2, entries.size)
+        assertTrue(entries.all { it.mealName == "Breakfast" })
+
+        // Also saved to the library
+        val meals = repo.observeSavedMeals().first()
+        assertEquals(1, meals.size)
+        assertEquals("Breakfast", meals[0].name)
+    }
+
+    // -----------------------------------------------------------------------
     // Parse failures surface as a dismissible error (and clear on a later success)
     // -----------------------------------------------------------------------
 

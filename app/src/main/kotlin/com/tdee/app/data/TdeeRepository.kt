@@ -433,6 +433,7 @@ class TdeeRepository(
     suspend fun addFoodGroup(
         items: List<NewFoodItem>,
         loggedDate: LocalDate? = null,
+        mealName: String? = null,
     ): String = withContext(Dispatchers.IO) {
         if (items.isEmpty()) return@withContext UUID.randomUUID().toString()
         val uid = currentUser.userId()
@@ -462,6 +463,7 @@ class TdeeRepository(
                     carbG = item.carbG,
                     sourceDb = FoodSourceDb.MANUAL,
                     mealId = mealId,
+                    mealName = mealName,
                     createdAt = now,
                     updatedAt = now,
                 )
@@ -651,7 +653,7 @@ class TdeeRepository(
                     fatG = it.fatG, carbG = it.carbG, grams = it.grams,
                 )
             }
-            addFoodGroup(items, loggedDate)
+            addFoodGroup(items, loggedDate, meal.name)
         }
 
     /**
@@ -675,6 +677,7 @@ class TdeeRepository(
         withContext(Dispatchers.IO) {
             val uid = currentUser.userId()
             val entries = foodDao.getByMeal(uid, mealId)
+            val sourceMealName = entries.firstOrNull()?.mealName
             val items = entries.map {
                 NewFoodItem(
                     name = it.name, kcal = it.kcal, proteinG = it.proteinG,
@@ -682,7 +685,7 @@ class TdeeRepository(
                     grams = it.grams.takeIf { g -> g > 0 },
                 )
             }
-            addFoodGroup(items, targetDate)
+            addFoodGroup(items, targetDate, sourceMealName)
         }
 
     /**
