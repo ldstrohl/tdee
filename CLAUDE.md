@@ -139,9 +139,20 @@ Layout: `com.tdee.app` → `di/`, `data/` (Room + repo + `FoodParser` + `ChartDa
 (`dashboard`/`add_food`/`add_weight`/`settings`/`insights`/`help`). UI ViewModels use the
 `viewModelFactory { initializer { ... } }` + `APPLICATION_KEY` pattern.
 
-Not yet built: **NL `/parse` proxy + USDA** (modules 1–2 — drops into the `FoodParser` seam) — the only
-remaining MVP piece. Needs a Cloudflare Worker + API keys + deploy, so only partially verifiable here.
-(Onboarding validation-feedback + Fat-% bugs are now fixed.)
+**NL parsing (modules 1–2)** now ships as a **client-direct bring-your-own-key** parser behind the
+`FoodParser` seam (`LlmFoodParser` with Gemini/OpenAI/Anthropic adapters; key entered in Settings,
+stored in EncryptedSharedPreferences; no key → manual entry still works). **The Cloudflare `worker/`
+is retired** (no longer referenced by the app; the directory is a standalone CF project, safe to
+delete — left in place pending the user's call). (Onboarding validation-feedback + Fat-% bugs fixed.)
+
+**User-testing-feedback run** (branch `feature/user-testing-feedback`, addresses `USER_TESTING.md`):
+Phase 1 — collapsible **meal groups**, **saved-meals** library, **repeat-from-prior-day**, **food
+history**, single-entry edit, `imePadding` keyboard fix, parse-confirm running totals. Phase 2 — the
+BYO-key parser above. Phase 3 — **check-in macro rebalancing** (`:domain` `MacroBalancer`: editing a
+macro holds the kcal target fixed + refills unlocked macros). Phase 4 — **Weight hub** (`weight/`:
+HC sync + manual entry + trend chart). Phase 5 — **chart fixes + zoom** (brighter raw points;
+tap-to-**Expand** a chart to a full-screen `ChartDetailScreen` with pinch-zoom / drag-pan / landscape).
+Schema is now on **real Room migrations** (no more `fallbackToDestructiveMigration`).
 
 **Health Connect testing (verified path):** HC needs **platform HC (Android 14+ / API 34)** — works on
 the `tdee_phone` emulator. It does NOT work on the Pixel 3 (`REDACTED`, Android 12) — that uses the
