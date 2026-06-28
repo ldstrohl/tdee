@@ -45,6 +45,8 @@ import com.tdee.app.settings.LlmSettingsScreen
 import com.tdee.app.settings.LlmSettingsViewModel
 import com.tdee.app.settings.SettingsRoute
 import com.tdee.app.ui.theme.TdeeTheme
+import com.tdee.app.weight.WeightScreen
+import com.tdee.app.weight.WeightViewModel
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -99,7 +101,7 @@ class MainActivity : ComponentActivity() {
                                         viewModel = vm,
                                         onAddFood = { navController.navigate("add_food") },
                                         onLogText = { navController.navigate("log_text") },
-                                        onAddWeight = { navController.navigate("add_weight") },
+                                        onAddWeight = { navController.navigate("weight") },
                                         onOpenSettings = { navController.navigate("settings") },
                                         onOpenInsights = { navController.navigate("insights") },
                                         onCheckin = { navController.navigate("checkin") },
@@ -176,6 +178,26 @@ class MainActivity : ComponentActivity() {
                                     ParseConfirmScreen(
                                         viewModel = vm,
                                         onDone = { navController.popBackStack() },
+                                    )
+                                }
+
+                                composable("weight") {
+                                    val vm: WeightViewModel =
+                                        viewModel(factory = WeightViewModel.Factory)
+                                    val lifecycleOwner = LocalLifecycleOwner.current
+                                    DisposableEffect(lifecycleOwner) {
+                                        val observer = LifecycleEventObserver { _, event ->
+                                            if (event == Lifecycle.Event.ON_RESUME) vm.reload()
+                                        }
+                                        lifecycleOwner.lifecycle.addObserver(observer)
+                                        onDispose {
+                                            lifecycleOwner.lifecycle.removeObserver(observer)
+                                        }
+                                    }
+                                    WeightScreen(
+                                        viewModel = vm,
+                                        onBack = { navController.popBackStack() },
+                                        onLogManual = { navController.navigate("add_weight") },
                                     )
                                 }
 

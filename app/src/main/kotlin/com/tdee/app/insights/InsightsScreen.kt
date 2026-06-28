@@ -188,27 +188,45 @@ private fun TrendChartSection(
             }
 
             else -> {
-                val chartColors = LocalChartColors.current
-                val textMeasurer = rememberTextMeasurer()
                 // Goal line always shows when a goal is set; the projection LINES only when toggled on.
                 val goalLbAlways = (state.projection as? ProjectionUi.Ready)?.goalLb
                 val projectionArg = if (state.predictionOn) state.projection else ProjectionUi.NoGoal
-
-                Canvas(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(880f / 340f),
-                ) {
-                    drawTrendChart(
-                        points = state.visiblePoints,
-                        goalLb = goalLbAlways,
-                        projection = projectionArg,
-                        colors = chartColors,
-                        textMeasurer = textMeasurer,
-                    )
-                }
+                WeightTrendChart(
+                    points = state.visiblePoints,
+                    goalLb = goalLbAlways,
+                    projection = projectionArg,
+                )
             }
         }
+    }
+}
+
+/**
+ * Renders the weight trend Canvas (raw scatter + EMA + optional goal line + optional prediction
+ * overlay). Shared by the Insights trend section and the Weight screen; pass
+ * [ProjectionUi.NoGoal] to draw just the trend (with a goal line when [goalLb] is set).
+ */
+@Composable
+internal fun WeightTrendChart(
+    points: List<WeightPointLb>,
+    goalLb: Double?,
+    projection: ProjectionUi,
+    modifier: Modifier = Modifier,
+) {
+    val chartColors = LocalChartColors.current
+    val textMeasurer = rememberTextMeasurer()
+    Canvas(
+        modifier = modifier
+            .fillMaxWidth()
+            .aspectRatio(880f / 340f),
+    ) {
+        drawTrendChart(
+            points = points,
+            goalLb = goalLb,
+            projection = projection,
+            colors = chartColors,
+            textMeasurer = textMeasurer,
+        )
     }
 }
 
@@ -426,7 +444,7 @@ private fun MacroBar(label: String, consumed: Double, target: Double, color: Col
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun Pill(label: String, active: Boolean, onClick: () -> Unit) {
+internal fun Pill(label: String, active: Boolean, onClick: () -> Unit) {
     val containerColor =
         if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface
     val contentColor =

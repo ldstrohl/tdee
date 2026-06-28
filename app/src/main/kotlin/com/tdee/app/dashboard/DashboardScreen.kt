@@ -98,7 +98,7 @@ fun DashboardScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text("Weight", style = MaterialTheme.typography.titleMedium)
-                TextButton(onClick = onAddWeight) { Text("Log weight") }
+                TextButton(onClick = onAddWeight) { Text("View & log") }
             }
         }
     }
