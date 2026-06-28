@@ -1,6 +1,7 @@
 package com.tdee.app.insights
 
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,6 +36,7 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
@@ -61,6 +63,7 @@ fun InsightsScreen(
     viewModel: InsightsViewModel,
     onBack: () -> Unit,
     onHelp: () -> Unit = {},
+    onMaximize: (ChartType) -> Unit = {},
 ) {
     val state by viewModel.state.collectAsState()
 
@@ -90,6 +93,7 @@ fun InsightsScreen(
             state = state,
             onRangeSelected = { viewModel.setRange(it) },
             onPredictionToggle = { viewModel.setPrediction(!state.predictionOn) },
+            onMaximize = { onMaximize(ChartType.TREND) },
         )
 
         // Expenditure chart section (independent range)
@@ -97,6 +101,7 @@ fun InsightsScreen(
             points = state.visibleExpenditurePoints,
             selectedRange = state.expenditureRange,
             onRangeSelected = { viewModel.setExpenditureRange(it) },
+            onMaximize = { onMaximize(ChartType.EXPENDITURE) },
         )
 
         // Macro donut section (independent window)
@@ -131,9 +136,19 @@ private fun TrendChartSection(
     state: InsightsUiState,
     onRangeSelected: (WeightRange) -> Unit,
     onPredictionToggle: () -> Unit,
+    onMaximize: () -> Unit = {},
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Weight Trend", style = MaterialTheme.typography.titleMedium)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Weight Trend", style = MaterialTheme.typography.titleMedium)
+            if (state.visiblePoints.size >= 2) {
+                TextButton(onClick = onMaximize) { Text("Expand ⤢") }
+            }
+        }
 
         // Range pills (own row)
         Row(
@@ -195,6 +210,7 @@ private fun TrendChartSection(
                     points = state.visiblePoints,
                     goalLb = goalLbAlways,
                     projection = projectionArg,
+                    modifier = Modifier.clickable(onClick = onMaximize),
                 )
             }
         }
@@ -239,9 +255,19 @@ private fun ExpenditureChartSection(
     points: List<DayExpenditurePoint>,
     selectedRange: ExpenditureRange,
     onRangeSelected: (ExpenditureRange) -> Unit,
+    onMaximize: () -> Unit = {},
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Expenditure", style = MaterialTheme.typography.titleMedium)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Expenditure", style = MaterialTheme.typography.titleMedium)
+            if (points.size >= 2) {
+                TextButton(onClick = onMaximize) { Text("Expand ⤢") }
+            }
+        }
 
         Row(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -281,7 +307,8 @@ private fun ExpenditureChartSection(
                 Canvas(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .aspectRatio(880f / 340f),
+                        .aspectRatio(880f / 340f)
+                        .clickable(onClick = onMaximize),
                 ) {
                     drawExpenditureChart(
                         points = points,
@@ -487,12 +514,13 @@ private val DASH_3_3 = PathEffect.dashPathEffect(floatArrayOf(3f, 3f))
  *
  * All colors come from [colors] (LocalChartColors.current at the call site).
  */
-private fun DrawScope.drawTrendChart(
+internal fun DrawScope.drawTrendChart(
     points: List<WeightPointLb>,
     goalLb: Double?,
     projection: ProjectionUi,
     colors: ChartColors,
     textMeasurer: TextMeasurer,
+    xDomain: Pair<LocalDate, LocalDate>? = null,
 ) {
     val w = size.width
     val h = size.height
@@ -508,19 +536,19 @@ private fun DrawScope.drawTrendChart(
     // Scale factor for strokes / radii relative to reference width
     val scale = w / 880f
 
-    // X domain
+    // X domain — an explicit [xDomain] (from pinch/pan in the full-screen view) overrides the
+    // data-derived span and suppresses the prediction overlay so the zoom math stays simple.
     val historyDates = points.map { it.date }
-    val tMin = historyDates.first()
-
-    val projReady = projection as? ProjectionUi.Ready
+    val projReady = if (xDomain == null) projection as? ProjectionUi.Ready else null
     val furthestPredDate: LocalDate? = projReady?.let {
         listOfNotNull(
             (it.goalPace as? PaceUi.Reachable)?.date,
             (it.currentPace as? PaceUi.Reachable)?.date,
         ).maxOrNull()
     }
-    val tMax: LocalDate = furthestPredDate
-        ?.takeIf { it.isAfter(historyDates.last()) }
+    val tMin: LocalDate = xDomain?.first ?: historyDates.first()
+    val tMax: LocalDate = xDomain?.second
+        ?: furthestPredDate?.takeIf { it.isAfter(historyDates.last()) }
         ?: historyDates.last()
 
     val totalDays = ChronoUnit.DAYS.between(tMin, tMax).toFloat().coerceAtLeast(1f)
@@ -530,10 +558,13 @@ private fun DrawScope.drawTrendChart(
         return ml + pw * (offset / totalDays)
     }
 
-    // Y domain — include raw, ema, and goal in the range
+    // Y domain — include raw, ema, and goal in the range (only points within the visible window
+    // when zoomed, so the vertical scale fits what's on screen).
+    val yPoints = if (xDomain == null) points
+        else points.filter { !it.date.isBefore(tMin) && !it.date.isAfter(tMax) }
     val allYVals = buildList<Double> {
-        addAll(points.mapNotNull { it.rawLb })
-        addAll(points.map { it.emaLb })
+        addAll(yPoints.mapNotNull { it.rawLb })
+        addAll(yPoints.map { it.emaLb })
         goalLb?.let { add(it) }
     }
     val vMin = (allYVals.minOrNull() ?: 100.0) - 2.0
@@ -579,22 +610,25 @@ private fun DrawScope.drawTrendChart(
         drawText(glM, topLeft = Offset(ml + 4f, gy - glM.size.height - 4f))
     }
 
-    // ---- Raw scatter dots (r≈2.4 at reference width) ----
-    val rawRadius = 2.4f * scale
-    for (p in points) {
-        val rawLb = p.rawLb ?: continue
-        drawCircle(color = colors.rawPoint, radius = rawRadius, center = Offset(xOf(p.date), yOf(rawLb)))
-    }
-
-    // ---- EMA polyline (stroke-width 3 at reference width) ----
-    if (points.size >= 2) {
-        val path = Path()
-        points.forEachIndexed { i, p ->
-            val x = xOf(p.date)
-            val y = yOf(p.emaLb)
-            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+    // Clip the data series to the plot rect so a zoomed/panned window never bleeds into the gutter.
+    clipRect(left = ml, top = mt, right = w - mr, bottom = mt + ph) {
+        // ---- Raw scatter dots (r≈3.0 at reference width) ----
+        val rawRadius = 3.0f * scale
+        for (p in points) {
+            val rawLb = p.rawLb ?: continue
+            drawCircle(color = colors.rawPoint, radius = rawRadius, center = Offset(xOf(p.date), yOf(rawLb)))
         }
-        drawPath(path, color = colors.emaLine, style = Stroke(width = 3f * scale))
+
+        // ---- EMA polyline (stroke-width 3 at reference width) ----
+        if (points.size >= 2) {
+            val path = Path()
+            points.forEachIndexed { i, p ->
+                val x = xOf(p.date)
+                val y = yOf(p.emaLb)
+                if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            }
+            drawPath(path, color = colors.emaLine, style = Stroke(width = 3f * scale))
+        }
     }
 
     // ---- Prediction overlay ----
@@ -684,10 +718,11 @@ private fun DrawScope.drawTrendChart(
  *   - TDEE polyline (tdeeLine color, stroke-width 3 scaled)
  *   - ~6 y-gridlines + ~6 date ticks
  */
-private fun DrawScope.drawExpenditureChart(
+internal fun DrawScope.drawExpenditureChart(
     points: List<DayExpenditurePoint>,
     colors: ChartColors,
     textMeasurer: TextMeasurer,
+    xDomain: Pair<LocalDate, LocalDate>? = null,
 ) {
     val w = size.width
     val h = size.height
@@ -701,10 +736,13 @@ private fun DrawScope.drawExpenditureChart(
     val ph = h - mt - mb
     val scale = w / 880f
 
-    // X domain: index-based (one slot per point)
-    val n = points.size
-    val tMin = points.first().date
-    val tMax = points.last().date
+    // X domain. An explicit [xDomain] (pinch/pan in the full-screen view) narrows the window;
+    // only the points inside it are drawn, and bar width / y-scale key off that visible subset.
+    val tMin = xDomain?.first ?: points.first().date
+    val tMax = xDomain?.second ?: points.last().date
+    val drawPoints = if (xDomain == null) points
+        else points.filter { !it.date.isBefore(tMin) && !it.date.isAfter(tMax) }
+    val n = drawPoints.size.coerceAtLeast(1)
     val totalDays = ChronoUnit.DAYS.between(tMin, tMax).toFloat().coerceAtLeast(1f)
 
     fun xOf(date: LocalDate): Float {
@@ -713,8 +751,8 @@ private fun DrawScope.drawExpenditureChart(
     }
 
     // Y domain — include all intakeKcal (non-null) and all tdeeKcal values, ±150 padding
-    val intakeValues = points.mapNotNull { it.intakeKcal }
-    val tdeeValues = points.map { it.tdeeKcal }
+    val intakeValues = drawPoints.mapNotNull { it.intakeKcal }
+    val tdeeValues = drawPoints.map { it.tdeeKcal }
     val allVals = intakeValues + tdeeValues
     val vMin = ((allVals.minOrNull() ?: 1500.0) - 150.0)
     val vMax = ((allVals.maxOrNull() ?: 3000.0) + 150.0)
@@ -748,42 +786,45 @@ private fun DrawScope.drawExpenditureChart(
         drawText(m, topLeft = Offset(x - m.size.width / 2f, h - mb + 6f))
     }
 
-    // ---- Intake bars + deficit shading ----
-    for (point in points) {
-        val x = xOf(point.date)
-        val intakeKcal = point.intakeKcal ?: continue  // skip unlogged days
+    // Clip bars + line to the plot rect so a panned window never bleeds into the gutter.
+    clipRect(left = ml, top = mt, right = w - mr, bottom = mt + ph) {
+        // ---- Intake bars + deficit shading ----
+        for (point in drawPoints) {
+            val x = xOf(point.date)
+            val intakeKcal = point.intakeKcal ?: continue  // skip unlogged days
 
-        val yIntake = yOf(intakeKcal)
-        val yTdee = yOf(point.tdeeKcal)
+            val yIntake = yOf(intakeKcal)
+            val yTdee = yOf(point.tdeeKcal)
 
-        // Intake bar (from bottom up to intake level)
-        drawRect(
-            color = colors.intakeBar,
-            topLeft = Offset(x - bw / 2f, yIntake),
-            size = Size(bw, base - yIntake),
-            alpha = 0.85f,
-        )
-
-        // Deficit-only shading: shade the gap between bar-top and TDEE line ONLY when intake < TDEE
-        if (intakeKcal < point.tdeeKcal) {
+            // Intake bar (from bottom up to intake level)
             drawRect(
-                color = colors.deficitFill,
-                topLeft = Offset(x - bw / 2f, yTdee),
-                size = Size(bw, yIntake - yTdee),
-                alpha = 0.7f,
+                color = colors.intakeBar,
+                topLeft = Offset(x - bw / 2f, yIntake),
+                size = Size(bw, base - yIntake),
+                alpha = 0.85f,
             )
-        }
-    }
 
-    // ---- TDEE polyline (stroke-width 3 at reference width) ----
-    if (points.size >= 2) {
-        val path = Path()
-        points.forEachIndexed { i, p ->
-            val x = xOf(p.date)
-            val y = yOf(p.tdeeKcal)
-            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            // Deficit-only shading: shade the gap between bar-top and TDEE line ONLY when intake < TDEE
+            if (intakeKcal < point.tdeeKcal) {
+                drawRect(
+                    color = colors.deficitFill,
+                    topLeft = Offset(x - bw / 2f, yTdee),
+                    size = Size(bw, yIntake - yTdee),
+                    alpha = 0.7f,
+                )
+            }
         }
-        drawPath(path, color = colors.tdeeLine, style = Stroke(width = 3f * scale))
+
+        // ---- TDEE polyline (stroke-width 3 at reference width) ----
+        if (drawPoints.size >= 2) {
+            val path = Path()
+            drawPoints.forEachIndexed { i, p ->
+                val x = xOf(p.date)
+                val y = yOf(p.tdeeKcal)
+                if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            }
+            drawPath(path, color = colors.tdeeLine, style = Stroke(width = 3f * scale))
+        }
     }
 }
 

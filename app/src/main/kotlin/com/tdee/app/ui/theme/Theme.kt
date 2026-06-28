@@ -69,7 +69,7 @@ private val DarkColors = darkColorScheme(
 
 // Light chart palette — hex values from design/charts.html
 private val LightChartColors = ChartColors(
-    rawPoint         = Color(0xFFB9B2C9),
+    rawPoint         = Color(0xFF8F84AC),  // deepened for contrast on the light surface
     emaLine          = Color(0xFF6750A4),
     goalLine         = Color(0xFF9A8FB8),
     intakeBar        = Color(0xFF7CC5C0),
@@ -90,7 +90,7 @@ private val LightChartColors = ChartColors(
 //   • Grid / axis muted toward light-on-dark tones
 //   • chartSurface = dark elevated container tone (matches M3 surface at elevation)
 private val DarkChartColors = ChartColors(
-    rawPoint         = Color(0xFF8078A0),  // muted purple, still visible on dark
+    rawPoint         = Color(0xFFAEA4CE),  // brightened lavender for contrast on dark
     emaLine          = Color(0xFFD0BCFF),  // bright lavender (matches dark primary)
     goalLine         = Color(0xFFBBAAD8),  // lighter goal purple
     intakeBar        = Color(0xFF5DB8B3),  // slightly muted teal, readable on dark

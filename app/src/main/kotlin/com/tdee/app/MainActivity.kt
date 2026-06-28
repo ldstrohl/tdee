@@ -34,6 +34,8 @@ import com.tdee.app.editprofile.EditProfileScreen
 import com.tdee.app.editprofile.EditProfileViewModel
 import com.tdee.app.history.FoodHistoryScreen
 import com.tdee.app.history.FoodHistoryViewModel
+import com.tdee.app.insights.ChartDetailScreen
+import com.tdee.app.insights.ChartType
 import com.tdee.app.insights.HelpScreen
 import com.tdee.app.insights.InsightsScreen
 import com.tdee.app.insights.InsightsViewModel
@@ -127,6 +129,27 @@ class MainActivity : ComponentActivity() {
                                         viewModel = vm,
                                         onBack = { navController.popBackStack() },
                                         onHelp = { navController.navigate("help") },
+                                        onMaximize = { type ->
+                                            navController.navigate("chart_detail/${type.name}")
+                                        },
+                                    )
+                                }
+
+                                composable(
+                                    route = "chart_detail/{type}",
+                                    arguments = listOf(
+                                        navArgument("type") { type = NavType.StringType }
+                                    ),
+                                ) { backStackEntry ->
+                                    val chartType = ChartType.valueOf(
+                                        backStackEntry.arguments!!.getString("type")!!
+                                    )
+                                    val vm: InsightsViewModel =
+                                        viewModel(factory = InsightsViewModel.Factory)
+                                    ChartDetailScreen(
+                                        viewModel = vm,
+                                        type = chartType,
+                                        onBack = { navController.popBackStack() },
                                     )
                                 }
 
