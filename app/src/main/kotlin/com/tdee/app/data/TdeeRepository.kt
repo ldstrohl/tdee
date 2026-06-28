@@ -657,6 +657,28 @@ class TdeeRepository(
         }
 
     /**
+     * Reactive stream of non-deleted food entries whose log-day equals [date] for the current user.
+     *
+     * Room re-emits the list automatically on any food_entry change, so collectors stay
+     * up-to-date without polling. The window is computed using the profile's [dayStartHour].
+     * Emits an empty list when no profile exists for the current user.
+     */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    fun observeFoodEntriesForDate(date: LocalDate): Flow<List<FoodEntryEntity>> {
+        val uid = currentUser.userId()
+        return profileDao.observeByUserId(uid).flatMapLatest { profileEntity ->
+            if (profileEntity == null) {
+                emptyFlow()
+            } else {
+                val windowStart = date.atStartOfDay(zone).toInstant()
+                    .plusSeconds(profileEntity.dayStartHour * 3600L)
+                val windowEnd = windowStart.plusSeconds(24 * 3600L)
+                foodDao.observeActiveInRange(uid, windowStart, windowEnd)
+            }
+        }
+    }
+
+    /**
      * Returns the non-deleted food entries whose log-day equals [date] for the current user.
      */
     suspend fun foodEntriesForDate(date: LocalDate): List<FoodEntryEntity> =

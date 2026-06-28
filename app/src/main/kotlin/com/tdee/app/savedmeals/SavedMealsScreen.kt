@@ -82,7 +82,7 @@ fun SavedMealsScreen(
                                 )
                                 if (lastLoggedId == meal.id) {
                                     Text(
-                                        "Logged to today.",
+                                        "Added.",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.primary,
                                     )
@@ -90,9 +90,9 @@ fun SavedMealsScreen(
                             }
                             Row {
                                 TextButton(onClick = {
-                                    viewModel.logToday(meal.id)
+                                    viewModel.logToDate(meal.id)
                                     lastLoggedId = meal.id
-                                }) { Text("Log today") }
+                                }) { Text("Log") }
                                 TextButton(onClick = { viewModel.delete(meal.id) }) {
                                     Text("Delete", color = MaterialTheme.colorScheme.error)
                                 }

@@ -104,5 +104,17 @@ class AddFoodViewModel(
                 AddFoodViewModel(app.container.repository)
             }
         }
+
+        /**
+         * Factory that pre-selects [initialDate] as the log date. The date is clamped to
+         * ≤ today by [setSelectedDate] so past-date navigation from the dashboard is applied
+         * immediately but future dates are not injectable.
+         */
+        fun factory(initialDate: LocalDate): ViewModelProvider.Factory = viewModelFactory {
+            initializer {
+                val app = this[ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY] as TdeeApplication
+                AddFoodViewModel(app.container.repository).also { it.setSelectedDate(initialDate) }
+            }
+        }
     }
 }

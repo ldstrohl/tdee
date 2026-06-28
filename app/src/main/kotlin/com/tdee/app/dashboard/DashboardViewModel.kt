@@ -11,14 +11,17 @@ import com.tdee.app.data.FoodEntryEntity
 import com.tdee.app.data.TdeeRepository
 import com.tdee.domain.Targets
 import com.tdee.domain.TdeeMethod
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.time.LocalDate
 
 // ---------------------------------------------------------------------------
 // Units helpers — kg→lb conversion lives here, nowhere else
@@ -73,26 +76,36 @@ sealed interface DashboardUiState {
 // ViewModel
 // ---------------------------------------------------------------------------
 
-class DashboardViewModel(private val repo: TdeeRepository) : ViewModel() {
+class DashboardViewModel(
+    private val repo: TdeeRepository,
+    initialDate: LocalDate = LocalDate.now(),
+) : ViewModel() {
 
     // One-shot state for TDEE/targets/trend (not reactive — these require heavy engine compute).
     private val _loadedBase = MutableStateFlow<LoadedBase?>(null)
 
+    /** The current date ceiling; used to clamp future navigation. */
+    private val today = initialDate
+
+    /** The currently viewed log-day. Defaults to today; can be navigated by the user. */
+    val selectedDate = MutableStateFlow(initialDate)
+
     /**
-     * Reactive list of today's food entries. Room re-emits on every insert or soft-delete,
-     * so the dashboard updates without polling or re-navigation. The window is fixed at
-     * collection time — see [TdeeRepository.observeTodayFoodEntries] for the MVP caveat on
-     * midnight rollovers.
+     * Reactive list of food entries for [selectedDate]. Room re-emits on every insert or
+     * soft-delete, so the dashboard updates without polling or re-navigation. Switching the
+     * selected date instantly updates the list via flatMapLatest.
      */
-    val todayFoods: StateFlow<List<FoodEntryEntity>> = repo.observeTodayFoodEntries()
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val dayFoods: StateFlow<List<FoodEntryEntity>> = selectedDate
+        .flatMapLatest { repo.observeFoodEntriesForDate(it) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     /**
      * The primary UI state, combining the one-shot loaded base with the reactive food list.
-     * Whenever todayFoods emits a new list, consumed totals are re-derived and the state
+     * Whenever dayFoods emits a new list, consumed totals are re-derived and the state
      * is updated automatically — no polling or re-navigation needed.
      */
-    val state: StateFlow<DashboardUiState> = combine(_loadedBase, todayFoods) { base, foods ->
+    val state: StateFlow<DashboardUiState> = combine(_loadedBase, dayFoods) { base, foods ->
         if (base == null) {
             DashboardUiState.Loading
         } else {
@@ -133,6 +146,25 @@ class DashboardViewModel(private val repo: TdeeRepository) : ViewModel() {
     fun saveMealFromGroup(mealId: String, name: String) {
         viewModelScope.launch { repo.saveMealFromGroup(name, mealId) }
     }
+
+    // -----------------------------------------------------------------------
+    // Date navigation
+    // -----------------------------------------------------------------------
+
+    /** Clamps [d] to [today] (prevents future-date navigation) and updates [selectedDate]. */
+    fun setSelectedDate(d: LocalDate) { selectedDate.value = minOf(d, today) }
+
+    /** Moves [selectedDate] one day into the past. */
+    fun prevDay() { setSelectedDate(selectedDate.value.minusDays(1)) }
+
+    /**
+     * Moves [selectedDate] one day into the future, clamped to [today].
+     * No-op when already viewing today.
+     */
+    fun nextDay() { setSelectedDate(selectedDate.value.plusDays(1)) }
+
+    /** Resets [selectedDate] to today. */
+    fun goToToday() { selectedDate.value = today }
 
     private fun load() {
         viewModelScope.launch {

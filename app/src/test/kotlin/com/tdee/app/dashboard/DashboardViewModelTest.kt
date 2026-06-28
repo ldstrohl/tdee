@@ -45,6 +45,9 @@ import java.time.ZoneOffset
  * Seed data mirrors the pattern established in TdeeRepositoryTest: 7 weight entries
  * with a slight downward trend, and matching food entries on past log-days. Today's
  * food is injected separately per test.
+ *
+ * Tests that check consumed-kcal totals pass [fixedDay] as the VM's initialDate so
+ * that [DashboardViewModel.dayFoods] observes the same log-day the fixed clock uses.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
@@ -58,6 +61,7 @@ class DashboardViewModelTest {
     // Clock is noon on 2026-06-21, the day after the last weight/food entry.
     private val fixedNow = Instant.parse("2026-06-21T12:00:00Z")
     private val fixedClock = Clock.fixed(fixedNow, zone)
+    private val fixedDay = LocalDate.of(2026, 6, 21)
 
     private val userId = "dashboard-test-user"
     private val fakeCurrentUser = CurrentUser { userId }
@@ -187,7 +191,7 @@ class DashboardViewModelTest {
     @Test
     fun `todayConsumedKcal is null when no food logged today`() = runTest {
         // No food on today's log-day (2026-06-21) in default setup.
-        val vm = DashboardViewModel(repo)
+        val vm = DashboardViewModel(repo, fixedDay)
 
         val loaded = vm.state
             .filter { it is DashboardUiState.Loaded }
@@ -204,7 +208,7 @@ class DashboardViewModelTest {
         db.foodEntryDao().insert(makeFoodEntry(t1, kcal = 600.0))
         db.foodEntryDao().insert(makeFoodEntry(t2, kcal = 800.0))
 
-        val vm = DashboardViewModel(repo)
+        val vm = DashboardViewModel(repo, fixedDay)
 
         val loaded = vm.state
             .filter { it is DashboardUiState.Loaded }
@@ -284,12 +288,12 @@ class DashboardViewModelTest {
     }
 
     // -----------------------------------------------------------------------
-    // 7. consumedTotals — per-macro sums from todayFoods
+    // 7. consumedTotals — per-macro sums from dayFoods
     // -----------------------------------------------------------------------
 
     @Test
     fun `consumedTotals is zero when no food logged today`() = runTest {
-        val vm = DashboardViewModel(repo)
+        val vm = DashboardViewModel(repo, fixedDay)
 
         val loaded = vm.state
             .filter { it is DashboardUiState.Loaded }
@@ -307,7 +311,7 @@ class DashboardViewModelTest {
         db.foodEntryDao().insert(makeFoodEntry(t1, kcal = 600.0))
         db.foodEntryDao().insert(makeFoodEntry(t2, kcal = 800.0))
 
-        val vm = DashboardViewModel(repo)
+        val vm = DashboardViewModel(repo, fixedDay)
 
         val loaded = vm.state
             .filter { it is DashboardUiState.Loaded }
@@ -322,7 +326,8 @@ class DashboardViewModelTest {
 
     @Test
     fun `consumedTotals updates reactively after food entry is added`() = runTest {
-        val vm = DashboardViewModel(repo)
+        // VM views fixedDay (2026-06-21); repo.addFood uses clock.instant() = same day.
+        val vm = DashboardViewModel(repo, fixedDay)
 
         // Wait for initial loaded state (no food today).
         val initial = vm.state
@@ -359,7 +364,7 @@ class DashboardViewModelTest {
         val t1 = Instant.parse("2026-06-21T08:00:00Z")
         val insertedId = db.foodEntryDao().insert(makeFoodEntry(t1, kcal = 400.0))
 
-        val vm = DashboardViewModel(repo)
+        val vm = DashboardViewModel(repo, fixedDay)
 
         // Wait for entry to appear.
         val withFood = vm.state
@@ -408,7 +413,7 @@ class DashboardViewModelTest {
 
     @Test
     fun `deleteMeal soft-deletes all entries in the group`() = runTest {
-        // Insert a meal group on today's log-day via the repo.
+        // Insert a meal group on today's log-day via the repo (clock = 2026-06-21).
         val mealId = repo.addFoodGroup(
             listOf(
                 NewFoodItem("Apple", 95.0, 0.5, 0.3, 25.0, null),
@@ -416,18 +421,18 @@ class DashboardViewModelTest {
             )
         )
 
-        val vm = DashboardViewModel(repo)
+        val vm = DashboardViewModel(repo, fixedDay)
 
-        // Wait for the two entries to appear in today's food.
-        val withFood = vm.todayFoods
+        // Wait for the two entries to appear in the day's food.
+        val withFood = vm.dayFoods
             .filter { it.size == 2 }
             .first()
         assertEquals(2, withFood.size)
 
         vm.deleteMeal(mealId)
 
-        // After delete, today's food list should be empty.
-        val afterDelete = vm.todayFoods
+        // After delete, the food list should be empty.
+        val afterDelete = vm.dayFoods
             .filter { it.isEmpty() }
             .first()
         assertTrue(afterDelete.isEmpty())
@@ -442,15 +447,15 @@ class DashboardViewModelTest {
             listOf(NewFoodItem("Chicken", 250.0, 30.0, 5.0, 0.0, null))
         )
 
-        val vm = DashboardViewModel(repo)
+        val vm = DashboardViewModel(repo, fixedDay)
 
         // Wait for two entries to appear.
-        vm.todayFoods.filter { it.size == 2 }.first()
+        vm.dayFoods.filter { it.size == 2 }.first()
 
         vm.deleteMeal(mealId1)
 
         // Only the second group's entry should remain.
-        val afterDelete = vm.todayFoods
+        val afterDelete = vm.dayFoods
             .filter { it.size == 1 }
             .first()
         assertEquals(1, afterDelete.size)
@@ -473,6 +478,86 @@ class DashboardViewModelTest {
             .filter { it is DashboardUiState.Loaded }
             .first() as DashboardUiState.Loaded
         assertTrue("checkinDue should be false right after a commit", !notDue.checkinDue)
+    }
+
+    // -----------------------------------------------------------------------
+    // 10. Date navigation — selectedDate / prevDay / nextDay / dayFoods
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `setSelectedDate makes dayFoods reflect the chosen day`() = runTest {
+        // The seed setup inserts food at 13:00 UTC for each of day0..day0+6.
+        // Navigate the VM to day0 and verify dayFoods shows that day's entry.
+        val vm = DashboardViewModel(repo, fixedDay)
+
+        vm.setSelectedDate(day0)
+
+        val foods = vm.dayFoods
+            .filter { it.isNotEmpty() }
+            .first()
+        assertEquals(1, foods.size)
+        assertEquals(dailyKcal, foods[0].kcal, 0.001)
+    }
+
+    @Test
+    fun `prevDay moves selectedDate back one day`() = runTest {
+        val vm = DashboardViewModel(repo, fixedDay)
+
+        vm.prevDay()
+
+        assertEquals(fixedDay.minusDays(1), vm.selectedDate.value)
+    }
+
+    @Test
+    fun `prevDay makes dayFoods reflect the prior day`() = runTest {
+        // The day before fixedDay is 2026-06-20, which has seed food (day0+7 = 2026-06-20).
+        // Actually: day0 = 2026-06-13; seed range is day0..day0+6 = 2026-06-13..2026-06-19.
+        // fixedDay = 2026-06-21; prevDay → 2026-06-20 (no seed food).
+        // Let's use setSelectedDate to a day we know has food.
+        val targetDay = day0.plusDays(2) // 2026-06-15 — has seed food
+        val vm = DashboardViewModel(repo, fixedDay)
+
+        vm.setSelectedDate(targetDay.plusDays(1)) // navigate to 2026-06-16
+        vm.prevDay()                              // → 2026-06-15
+
+        assertEquals(targetDay, vm.selectedDate.value)
+
+        val foods = vm.dayFoods
+            .filter { it.isNotEmpty() }
+            .first()
+        assertEquals(1, foods.size)
+    }
+
+    @Test
+    fun `nextDay clamps to today and does not go into the future`() = runTest {
+        // VM's "today" is fixedDay (2026-06-21). nextDay() from today should stay at today.
+        val vm = DashboardViewModel(repo, fixedDay)
+        assertEquals(fixedDay, vm.selectedDate.value)
+
+        vm.nextDay()
+
+        assertEquals(fixedDay, vm.selectedDate.value)
+    }
+
+    @Test
+    fun `nextDay advances when currently viewing a past day`() = runTest {
+        val vm = DashboardViewModel(repo, fixedDay)
+        vm.setSelectedDate(fixedDay.minusDays(2))
+
+        vm.nextDay()
+
+        assertEquals(fixedDay.minusDays(1), vm.selectedDate.value)
+    }
+
+    @Test
+    fun `goToToday resets selectedDate back to today`() = runTest {
+        val vm = DashboardViewModel(repo, fixedDay)
+        vm.setSelectedDate(day0) // navigate to a past day
+        assertEquals(day0, vm.selectedDate.value)
+
+        vm.goToToday()
+
+        assertEquals(fixedDay, vm.selectedDate.value)
     }
 
     // -----------------------------------------------------------------------

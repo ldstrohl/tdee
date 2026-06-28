@@ -236,5 +236,16 @@ class ParseConfirmViewModel(
                 ParseConfirmViewModel(app.container.foodParser, app.container.repository)
             }
         }
+
+        /** Factory that pre-selects [initialDate] as the log day for the parse-confirm flow. */
+        fun factory(initialDate: LocalDate): ViewModelProvider.Factory = viewModelFactory {
+            initializer {
+                val app =
+                    this[ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY] as TdeeApplication
+                ParseConfirmViewModel(app.container.foodParser, app.container.repository).also {
+                    it.selectedDate.value = initialDate
+                }
+            }
+        }
     }
 }

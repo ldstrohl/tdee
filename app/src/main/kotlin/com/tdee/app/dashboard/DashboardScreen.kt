@@ -1,5 +1,6 @@
 package com.tdee.app.dashboard
 
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,32 +11,87 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import com.tdee.app.data.FoodEntryEntity
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
     viewModel: DashboardViewModel,
-    onAddFood: () -> Unit = {},
-    onLogText: () -> Unit = {},
+    onAddFood: (LocalDate) -> Unit = {},
+    onLogText: (LocalDate) -> Unit = {},
     onAddWeight: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onOpenInsights: () -> Unit = {},
     onCheckin: () -> Unit = {},
     onEditFood: (Long) -> Unit = {},
-    onSavedMeals: () -> Unit = {},
+    onSavedMeals: (LocalDate) -> Unit = {},
     onFoodHistory: () -> Unit = {},
 ) {
     val state by viewModel.state.collectAsState()
-    val todayFoods by viewModel.todayFoods.collectAsState()
+    val dayFoods by viewModel.dayFoods.collectAsState()
+    val selectedDate by viewModel.selectedDate.collectAsState()
+
+    val today = remember { LocalDate.now() }
+    val dateLabel = if (selectedDate == today) "Today"
+        else selectedDate.format(DateTimeFormatter.ofPattern("EEE, MMM d"))
+
+    var showDatePicker by remember { mutableStateOf(false) }
+
+    // DatePickerState requires epoch-millis in UTC; initialise from current selectedDate.
+    val datePickerState = rememberDatePickerState(
+        initialSelectedDateMillis = selectedDate
+            .atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
+        selectableDates = object : SelectableDates {
+            override fun isSelectableDate(utcTimeMillis: Long): Boolean {
+                val date = Instant.ofEpochMilli(utcTimeMillis)
+                    .atZone(ZoneOffset.UTC).toLocalDate()
+                return !date.isAfter(today)
+            }
+        },
+    )
+
+    if (showDatePicker) {
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    datePickerState.selectedDateMillis?.let { millis ->
+                        val picked = Instant.ofEpochMilli(millis)
+                            .atZone(ZoneOffset.UTC).toLocalDate()
+                        viewModel.setSelectedDate(picked)
+                    }
+                    showDatePicker = false
+                }) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) { Text("Cancel") }
+            },
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -65,27 +121,46 @@ fun DashboardScreen(
             TextButton(onClick = onCheckin) { Text("Check in / adjust targets") }
         }
 
+        // Day navigator — swipe the food card or use these buttons to view another day.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TextButton(onClick = { viewModel.prevDay() }) { Text("◀") }
+            TextButton(onClick = { showDatePicker = true }) { Text(dateLabel) }
+            TextButton(
+                onClick = { viewModel.nextDay() },
+                enabled = selectedDate != today,
+            ) { Text("▶") }
+            if (selectedDate != today) {
+                TextButton(onClick = { viewModel.goToToday() }) { Text("Today") }
+            }
+        }
+
         when (val s = state) {
             is DashboardUiState.Loading -> {
                 Text("Loading…", style = MaterialTheme.typography.bodyMedium)
             }
 
             is DashboardUiState.Loaded -> {
-                LoadedContent(s, onCheckin)
+                LoadedContent(s, onCheckin, dateLabel)
             }
         }
 
-        // Today's food list — reactive, updates immediately on add/delete.
+        // Food list for the selected day — reactive, updates immediately on add/delete.
         TodayFoodSection(
-            foods = todayFoods,
-            onAddFood = onAddFood,
-            onLogText = onLogText,
+            foods = dayFoods,
+            onAddFood = { onAddFood(selectedDate) },
+            onLogText = { onLogText(selectedDate) },
             onDelete = { viewModel.deleteFood(it) },
             onDeleteMeal = { viewModel.deleteMeal(it) },
             onEditFood = onEditFood,
             onSaveMeal = { mealId, name -> viewModel.saveMealFromGroup(mealId, name) },
-            onSavedMeals = onSavedMeals,
+            onSavedMeals = { onSavedMeals(selectedDate) },
             onFoodHistory = onFoodHistory,
+            onPrevDay = { viewModel.prevDay() },
+            onNextDay = { viewModel.nextDay() },
         )
 
         // Weight logging entry point
@@ -105,7 +180,11 @@ fun DashboardScreen(
 }
 
 @Composable
-private fun LoadedContent(s: DashboardUiState.Loaded, onCheckin: () -> Unit) {
+private fun LoadedContent(
+    s: DashboardUiState.Loaded,
+    onCheckin: () -> Unit,
+    dateLabel: String,
+) {
     // Weekly "check-in due" nudge — a clear banner that opens the check-in screen.
     if (s.checkinDue) {
         Card(modifier = Modifier.fillMaxWidth()) {
@@ -162,10 +241,10 @@ private fun LoadedContent(s: DashboardUiState.Loaded, onCheckin: () -> Unit) {
         modifier = Modifier.padding(horizontal = 4.dp),
     )
 
-    // Today card — consumed / target calories (reactive)
+    // Selected-day card — consumed / target calories (reactive, reflects selected date)
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("Today", style = MaterialTheme.typography.titleMedium)
+            Text(dateLabel, style = MaterialTheme.typography.titleMedium)
             val consumed = s.todayConsumedKcal
             if (consumed != null) {
                 Text(
@@ -224,7 +303,7 @@ private fun MacroRow(label: String, consumed: Int, target: Int, unit: String) {
 }
 
 // ---------------------------------------------------------------------------
-// Today's food section
+// Food section
 // ---------------------------------------------------------------------------
 
 @Composable
@@ -238,15 +317,35 @@ private fun TodayFoodSection(
     onSaveMeal: (mealId: String, name: String) -> Unit,
     onSavedMeals: () -> Unit,
     onFoodHistory: () -> Unit,
+    onPrevDay: () -> Unit,
+    onNextDay: () -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .pointerInput(Unit) {
+                var totalDrag = 0f
+                detectHorizontalDragGestures(
+                    onDragStart = { totalDrag = 0f },
+                    onDragEnd = {
+                        val threshold = 80.dp.toPx()
+                        if (totalDrag > threshold) onPrevDay()
+                        else if (totalDrag < -threshold) onNextDay()
+                        totalDrag = 0f
+                    },
+                    onDragCancel = { totalDrag = 0f },
+                ) { _, dragAmount ->
+                    totalDrag += dragAmount
+                }
+            },
+    ) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Today's food", style = MaterialTheme.typography.titleMedium)
+                Text("Food", style = MaterialTheme.typography.titleMedium)
                 Row {
                     TextButton(onClick = onLogText) { Text("Describe a meal") }
                     TextButton(onClick = onAddFood) { Text("+ Add") }

@@ -24,6 +24,7 @@ import com.tdee.app.addfood.EditFoodEntryScreen
 import com.tdee.app.addfood.EditFoodEntryViewModel
 import com.tdee.app.addfood.ParseConfirmScreen
 import com.tdee.app.addfood.ParseConfirmViewModel
+import java.time.LocalDate
 import com.tdee.app.addweight.AddWeightScreen
 import com.tdee.app.addweight.AddWeightViewModel
 import com.tdee.app.checkin.CheckinScreen
@@ -101,14 +102,14 @@ class MainActivity : ComponentActivity() {
                                     }
                                     DashboardScreen(
                                         viewModel = vm,
-                                        onAddFood = { navController.navigate("add_food") },
-                                        onLogText = { navController.navigate("log_text") },
+                                        onAddFood = { date -> navController.navigate("add_food?date=$date") },
+                                        onLogText = { date -> navController.navigate("log_text?date=$date") },
                                         onAddWeight = { navController.navigate("weight") },
                                         onOpenSettings = { navController.navigate("settings") },
                                         onOpenInsights = { navController.navigate("insights") },
                                         onCheckin = { navController.navigate("checkin") },
                                         onEditFood = { id -> navController.navigate("edit_food/$id") },
-                                        onSavedMeals = { navController.navigate("saved_meals") },
+                                        onSavedMeals = { date -> navController.navigate("saved_meals?date=$date") },
                                         onFoodHistory = { navController.navigate("food_history") },
                                     )
                                 }
@@ -186,18 +187,40 @@ class MainActivity : ComponentActivity() {
                                     )
                                 }
 
-                                composable("add_food") {
+                                composable(
+                                    route = "add_food?date={date}",
+                                    arguments = listOf(
+                                        navArgument("date") {
+                                            type = NavType.StringType
+                                            nullable = true
+                                            defaultValue = null
+                                        }
+                                    ),
+                                ) { backStackEntry ->
+                                    val dateArg = backStackEntry.arguments?.getString("date")
+                                    val initialDate = if (dateArg != null) LocalDate.parse(dateArg) else LocalDate.now()
                                     val vm: AddFoodViewModel =
-                                        viewModel(factory = AddFoodViewModel.Factory)
+                                        viewModel(factory = AddFoodViewModel.factory(initialDate))
                                     AddFoodScreen(
                                         viewModel = vm,
                                         onDone = { navController.popBackStack() },
                                     )
                                 }
 
-                                composable("log_text") {
+                                composable(
+                                    route = "log_text?date={date}",
+                                    arguments = listOf(
+                                        navArgument("date") {
+                                            type = NavType.StringType
+                                            nullable = true
+                                            defaultValue = null
+                                        }
+                                    ),
+                                ) { backStackEntry ->
+                                    val dateArg = backStackEntry.arguments?.getString("date")
+                                    val initialDate = if (dateArg != null) LocalDate.parse(dateArg) else LocalDate.now()
                                     val vm: ParseConfirmViewModel =
-                                        viewModel(factory = ParseConfirmViewModel.Factory)
+                                        viewModel(factory = ParseConfirmViewModel.factory(initialDate))
                                     ParseConfirmScreen(
                                         viewModel = vm,
                                         onDone = { navController.popBackStack() },
@@ -248,9 +271,20 @@ class MainActivity : ComponentActivity() {
                                     )
                                 }
 
-                                composable("saved_meals") {
+                                composable(
+                                    route = "saved_meals?date={date}",
+                                    arguments = listOf(
+                                        navArgument("date") {
+                                            type = NavType.StringType
+                                            nullable = true
+                                            defaultValue = null
+                                        }
+                                    ),
+                                ) { backStackEntry ->
+                                    val dateArg = backStackEntry.arguments?.getString("date")
+                                    val initialDate = if (dateArg != null) LocalDate.parse(dateArg) else LocalDate.now()
                                     val vm: SavedMealsViewModel =
-                                        viewModel(factory = SavedMealsViewModel.Factory)
+                                        viewModel(factory = SavedMealsViewModel.factory(initialDate))
                                     SavedMealsScreen(
                                         viewModel = vm,
                                         onBack = { navController.popBackStack() },

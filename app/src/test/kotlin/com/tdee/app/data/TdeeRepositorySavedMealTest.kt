@@ -3,6 +3,7 @@ package com.tdee.app.data
 import androidx.room.Room
 import com.tdee.domain.ActivityLevel
 import com.tdee.domain.Sex
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -331,6 +332,73 @@ class TdeeRepositorySavedMealTest {
         val entries = repo.foodEntriesForDate(today)
         assertEquals(1, entries.size)
         assertEquals("Kept", entries[0].name)
+    }
+
+    // -----------------------------------------------------------------------
+    // observeFoodEntriesForDate (reactive)
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `observeFoodEntriesForDate returns entries only on the requested day`() = runTest {
+        val today = LocalDate.of(2026, 6, 21)
+        val yesterday = today.minusDays(1)
+
+        repo.addFood(name = "TodayFood", kcal = 300.0, proteinG = 0.0, fatG = 0.0, carbG = 0.0,
+            loggedDate = today)
+        repo.addFood(name = "YesterdayFood", kcal = 200.0, proteinG = 0.0, fatG = 0.0, carbG = 0.0,
+            loggedDate = yesterday)
+
+        val todayEntries = repo.observeFoodEntriesForDate(today).first()
+        val yesterdayEntries = repo.observeFoodEntriesForDate(yesterday).first()
+
+        assertEquals(1, todayEntries.size)
+        assertEquals("TodayFood", todayEntries[0].name)
+
+        assertEquals(1, yesterdayEntries.size)
+        assertEquals("YesterdayFood", yesterdayEntries[0].name)
+    }
+
+    @Test
+    fun `observeFoodEntriesForDate emits reactively when a new entry is added`() = runTest {
+        val today = LocalDate.of(2026, 6, 21)
+
+        // Initially empty.
+        val initial = repo.observeFoodEntriesForDate(today).first()
+        assertTrue(initial.isEmpty())
+
+        // Add an entry and confirm the flow emits the update.
+        repo.addFood(name = "Lunch", kcal = 500.0, proteinG = 0.0, fatG = 0.0, carbG = 0.0,
+            loggedDate = today)
+
+        val updated = repo.observeFoodEntriesForDate(today)
+            .filter { it.isNotEmpty() }
+            .first()
+        assertEquals(1, updated.size)
+        assertEquals("Lunch", updated[0].name)
+    }
+
+    // -----------------------------------------------------------------------
+    // logSavedMeal to a prior date
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `logSavedMeal with prior date lands the group on that day`() = runTest {
+        val savedId = repo.saveMeal(
+            "Breakfast",
+            listOf(NewFoodItem("Oats", 300.0, 10.0, 5.0, 55.0, null)),
+        )
+
+        val yesterday = LocalDate.of(2026, 6, 20)
+        repo.logSavedMeal(savedId, yesterday)
+
+        val yesterdayEntries = repo.foodEntriesForDate(yesterday)
+        assertEquals(1, yesterdayEntries.size)
+        assertEquals("Oats", yesterdayEntries[0].name)
+
+        // Today should have no entries.
+        val today = LocalDate.of(2026, 6, 21)
+        val todayEntries = repo.foodEntriesForDate(today)
+        assertTrue(todayEntries.isEmpty())
     }
 
     // -----------------------------------------------------------------------
