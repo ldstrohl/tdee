@@ -1,5 +1,6 @@
 package com.tdee.app.dashboard
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -30,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import com.tdee.app.data.FoodEntryEntity
+import com.tdee.app.insights.ChartType
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -48,6 +50,7 @@ fun DashboardScreen(
     onEditFood: (Long) -> Unit = {},
     onSavedMeals: (LocalDate) -> Unit = {},
     onFoodHistory: () -> Unit = {},
+    onOpenChart: (ChartType) -> Unit = {},
 ) {
     val state by viewModel.state.collectAsState()
     val dayFoods by viewModel.dayFoods.collectAsState()
@@ -144,7 +147,7 @@ fun DashboardScreen(
             }
 
             is DashboardUiState.Loaded -> {
-                LoadedContent(s, onCheckin, dateLabel)
+                LoadedContent(s, onCheckin, dateLabel, onOpenChart)
             }
         }
 
@@ -184,6 +187,7 @@ private fun LoadedContent(
     s: DashboardUiState.Loaded,
     onCheckin: () -> Unit,
     dateLabel: String,
+    onOpenChart: (ChartType) -> Unit,
 ) {
     // Weekly "check-in due" nudge — a clear banner that opens the check-in screen.
     if (s.checkinDue) {
@@ -209,7 +213,7 @@ private fun LoadedContent(
     }
 
     // TDEE card
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(modifier = Modifier.fillMaxWidth().clickable { onOpenChart(ChartType.EXPENDITURE) }) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -266,7 +270,7 @@ private fun LoadedContent(
     }
 
     // Macros card — consumed vs target per macro
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(modifier = Modifier.fillMaxWidth().clickable { onOpenChart(ChartType.MACROS) }) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("Macros", style = MaterialTheme.typography.titleMedium)
             MacroRow(

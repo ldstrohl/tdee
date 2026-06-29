@@ -326,13 +326,16 @@ private fun ExpenditureChartSection(
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun MacroDonutSection(
+internal fun MacroDonutSection(
     summary: MacroSummary?,
     selectedWindow: MacroWindow,
     onWindowSelected: (MacroWindow) -> Unit,
+    showTitle: Boolean = true,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Macros", style = MaterialTheme.typography.titleMedium)
+        if (showTitle) {
+            Text("Macros", style = MaterialTheme.typography.titleMedium)
+        }
 
         Row(
             horizontalArrangement = Arrangement.spacedBy(6.dp),

@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -30,7 +32,7 @@ import java.time.temporal.ChronoUnit
 import kotlin.math.roundToLong
 
 /** Which chart a [ChartDetailScreen] / "Expand" affordance refers to. */
-enum class ChartType { TREND, EXPENDITURE }
+enum class ChartType { TREND, EXPENDITURE, MACROS }
 
 /**
  * Pinch-zoom + horizontal-pan state for the full-screen chart.
@@ -102,6 +104,7 @@ fun ChartDetailScreen(
     val title = when (type) {
         ChartType.TREND -> "Weight Trend"
         ChartType.EXPENDITURE -> "Expenditure"
+        ChartType.MACROS -> "Macros"
     }
 
     Column(
@@ -116,89 +119,106 @@ fun ChartDetailScreen(
         ) {
             Text(title, style = MaterialTheme.typography.titleLarge)
             Row {
-                TextButton(onClick = { transform.reset() }) { Text("Reset") }
+                if (type != ChartType.MACROS) {
+                    TextButton(onClick = { transform.reset() }) { Text("Reset") }
+                }
                 TextButton(onClick = onBack) { Text("Back") }
             }
         }
 
-        // Range pills (reuse the same range state as Insights)
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            when (type) {
-                ChartType.TREND -> WeightRange.values().forEach { r ->
-                    Pill(r.label, r == state.selectedRange) {
-                        viewModel.setRange(r); transform.reset()
-                    }
-                }
-                ChartType.EXPENDITURE -> ExpenditureRange.values().forEach { r ->
-                    Pill(r.label, r == state.expenditureRange) {
-                        viewModel.setExpenditureRange(r); transform.reset()
-                    }
-                }
-            }
-        }
-
-        // Chart fills the remaining space (portrait or landscape).
-        Box(
-            modifier = Modifier.fillMaxWidth().weight(1f),
-            contentAlignment = Alignment.Center,
-        ) {
-            val hasData = when (type) {
-                ChartType.TREND -> state.visiblePoints.size >= 2
-                ChartType.EXPENDITURE -> state.visibleExpenditurePoints.size >= 2
-            }
-            if (!hasData) {
-                Text(
-                    "Not enough data yet",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+        if (type == ChartType.MACROS) {
+            // Macros has no zoom/pan or range pills — just a scrollable donut section.
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                MacroDonutSection(
+                    summary = state.macroSummary,
+                    selectedWindow = state.macroWindow,
+                    onWindowSelected = viewModel::setMacroWindow,
+                    showTitle = false,
                 )
-            } else {
-                Canvas(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .onSizeChanged { plotWidthPx = it.width.toFloat() * (804f / 880f) }
-                        .pointerInput(type) {
-                            detectTransformGestures { _, pan, zoom, _ ->
-                                transform.onGesture(pan.x, zoom, plotWidthPx)
-                            }
-                        },
-                ) {
-                    when (type) {
-                        ChartType.TREND -> {
-                            val pts = state.visiblePoints
-                            val win = transform.visibleWindow(pts.first().date, pts.last().date)
-                            drawTrendChart(
-                                points = pts,
-                                goalLb = (state.projection as? ProjectionUi.Ready)?.goalLb,
-                                projection = ProjectionUi.NoGoal,
-                                colors = chartColors,
-                                textMeasurer = textMeasurer,
-                                xDomain = win,
-                            )
+            }
+        } else {
+            // Range pills (reuse the same range state as Insights)
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                when (type) {
+                    ChartType.TREND -> WeightRange.values().forEach { r ->
+                        Pill(r.label, r == state.selectedRange) {
+                            viewModel.setRange(r); transform.reset()
                         }
-                        ChartType.EXPENDITURE -> {
-                            val pts = state.visibleExpenditurePoints
-                            val win = transform.visibleWindow(pts.first().date, pts.last().date)
-                            drawExpenditureChart(
-                                points = pts,
-                                colors = chartColors,
-                                textMeasurer = textMeasurer,
-                                xDomain = win,
-                            )
+                    }
+                    ChartType.EXPENDITURE -> ExpenditureRange.values().forEach { r ->
+                        Pill(r.label, r == state.expenditureRange) {
+                            viewModel.setExpenditureRange(r); transform.reset()
+                        }
+                    }
+                    else -> {}
+                }
+            }
+
+            // Chart fills the remaining space (portrait or landscape).
+            Box(
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                contentAlignment = Alignment.Center,
+            ) {
+                val hasData = when (type) {
+                    ChartType.TREND -> state.visiblePoints.size >= 2
+                    ChartType.EXPENDITURE -> state.visibleExpenditurePoints.size >= 2
+                    else -> false
+                }
+                if (!hasData) {
+                    Text(
+                        "Not enough data yet",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    Canvas(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .onSizeChanged { plotWidthPx = it.width.toFloat() * (804f / 880f) }
+                            .pointerInput(type) {
+                                detectTransformGestures { _, pan, zoom, _ ->
+                                    transform.onGesture(pan.x, zoom, plotWidthPx)
+                                }
+                            },
+                    ) {
+                        when (type) {
+                            ChartType.TREND -> {
+                                val pts = state.visiblePoints
+                                val win = transform.visibleWindow(pts.first().date, pts.last().date)
+                                drawTrendChart(
+                                    points = pts,
+                                    goalLb = (state.projection as? ProjectionUi.Ready)?.goalLb,
+                                    projection = ProjectionUi.NoGoal,
+                                    colors = chartColors,
+                                    textMeasurer = textMeasurer,
+                                    xDomain = win,
+                                )
+                            }
+                            ChartType.EXPENDITURE -> {
+                                val pts = state.visibleExpenditurePoints
+                                val win = transform.visibleWindow(pts.first().date, pts.last().date)
+                                drawExpenditureChart(
+                                    points = pts,
+                                    colors = chartColors,
+                                    textMeasurer = textMeasurer,
+                                    xDomain = win,
+                                )
+                            }
+                            else -> {}
                         }
                     }
                 }
             }
-        }
 
-        Text(
-            "Pinch to zoom · drag to pan · rotate for landscape",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+            Text(
+                "Pinch to zoom · drag to pan · rotate for landscape",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }

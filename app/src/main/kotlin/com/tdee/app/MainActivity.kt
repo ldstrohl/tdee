@@ -111,6 +111,7 @@ class MainActivity : ComponentActivity() {
                                         onEditFood = { id -> navController.navigate("edit_food/$id") },
                                         onSavedMeals = { date -> navController.navigate("saved_meals?date=$date") },
                                         onFoodHistory = { navController.navigate("food_history") },
+                                        onOpenChart = { type -> navController.navigate("chart_detail/${type.name}") },
                                     )
                                 }
 
