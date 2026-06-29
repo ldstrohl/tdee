@@ -19,3 +19,6 @@ local.properties
 /captures/
 .externalNativeBuild/
 .cxx/
+
+# Local analysis/report artifacts (generated, not source)
+/reports/
