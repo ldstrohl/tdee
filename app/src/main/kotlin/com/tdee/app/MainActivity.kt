@@ -244,6 +244,7 @@ class MainActivity : ComponentActivity() {
                                         viewModel = vm,
                                         onBack = { navController.popBackStack() },
                                         onLogManual = { navController.navigate("add_weight") },
+                                        onExpandChart = { navController.navigate("chart_detail/${ChartType.TREND.name}") },
                                     )
                                 }
 

@@ -36,6 +36,7 @@ fun WeightScreen(
     viewModel: WeightViewModel,
     onBack: () -> Unit,
     onLogManual: () -> Unit,
+    onExpandChart: () -> Unit = {},
 ) {
     val state by viewModel.state.collectAsState()
 
@@ -57,8 +58,34 @@ fun WeightScreen(
             TextButton(onClick = onBack) { Text("Back") }
         }
 
+        // Headline numbers
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            state.currentTrendLb?.let { lb ->
+                Text("%.1f lb".format(lb), style = MaterialTheme.typography.headlineMedium)
+            }
+            state.weeklyRateLb?.let { rate ->
+                Text(
+                    "%+.1f lb/wk".format(rate),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
         // Trend chart section
-        Text("Trend", style = MaterialTheme.typography.titleMedium)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Trend", style = MaterialTheme.typography.titleMedium)
+            if (state.visiblePoints.size >= 2) {
+                TextButton(onClick = onExpandChart) { Text("Expand ⤢") }
+            }
+        }
         Row(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -127,6 +154,17 @@ fun WeightScreen(
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             Text(if (state.syncing) "Syncing…" else "Sync now")
+                        }
+                        Text(
+                            "Missing older weigh-ins? Pull your complete history:",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        TextButton(
+                            onClick = viewModel::reimportFullHistory,
+                            enabled = !state.syncing,
+                        ) {
+                            Text("Re-import full history")
                         }
                     }
                     HcAvailability.NEEDS_SETUP -> Text(

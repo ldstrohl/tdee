@@ -184,4 +184,52 @@ class WeightViewModelTest {
 
         assertEquals("Up to date — no new weigh-ins.", s.syncStatus)
     }
+
+    @Test
+    fun `currentTrendLb and weeklyRateLb are derived correctly from the full series`() = runTest {
+        // @Before inserts 7 manual entries (June 13–19). weightSeries() generates one point per
+        // calendar day from the first entry through today (fixedClock = June 21), so the series
+        // has 9 points (June 13–21), which is >= 8 — weeklyRateLb is non-null.
+        val vm = makeVm()
+        val s = vm.awaitLoaded()
+
+        val pts = s.visiblePoints
+        assertTrue("series has at least 8 points", pts.size >= 8)
+
+        val expectedTrend = pts.last().emaLb
+        assertEquals("currentTrendLb mirrors last EMA", expectedTrend, s.currentTrendLb)
+
+        val expectedRate = pts.last().emaLb - pts[pts.size - 8].emaLb
+        assertEquals("weeklyRateLb is 7-day EMA delta", expectedRate, s.weeklyRateLb)
+    }
+
+    @Test
+    fun `reimportFullHistory imports older HC entries and reports the count`() = runTest {
+        // An HC weight older than the existing manual entries
+        val source = FakeHealthConnectSource().apply {
+            add(HcWeight(uid = "hc-old", time = Instant.parse("2026-06-10T07:00:00Z"), weightKg = 80.5, bodyFatPct = null))
+        }
+        val vm = makeVm(source)
+        vm.awaitLoaded()
+
+        vm.reimportFullHistory()
+        val s = vm.state.first { !it.syncing && it.syncStatus != null }
+
+        assertEquals("Imported 1 earlier weigh-in.", s.syncStatus)
+        assertTrue(
+            "the older HC weight is now stored",
+            db.weightEntryDao().getAll(userId).any { it.source == WeightSource.HEALTH_CONNECT },
+        )
+    }
+
+    @Test
+    fun `reimportFullHistory reports up to date when all history already imported`() = runTest {
+        val vm = makeVm() // empty HC source
+        vm.awaitLoaded()
+
+        vm.reimportFullHistory()
+        val s = vm.state.first { !it.syncing && it.syncStatus != null }
+
+        assertEquals("Up to date — full history already imported.", s.syncStatus)
+    }
 }

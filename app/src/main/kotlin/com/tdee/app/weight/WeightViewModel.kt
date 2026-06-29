@@ -32,6 +32,10 @@ data class WeightUiState(
     val syncing: Boolean = false,
     /** Last sync result message, shown until the next sync. */
     val syncStatus: String? = null,
+    /** Current EMA trend weight in lb (last point in the full series), or null when no data. */
+    val currentTrendLb: Double? = null,
+    /** 7-day change in EMA trend (lb/week). Negative = losing. Null when fewer than 8 data points. */
+    val weeklyRateLb: Double? = null,
 )
 
 /**
@@ -78,6 +82,22 @@ class WeightViewModel(
         }
     }
 
+    fun reimportFullHistory() {
+        if (_state.value.syncing) return
+        _state.value = _state.value.copy(syncing = true, syncStatus = null)
+        viewModelScope.launch {
+            val imported = runCatching { syncManager.sync(fullHistory = true) }.getOrNull()
+            val status = when {
+                imported == null -> "Couldn't re-import. Try again."
+                imported == 0 -> "Up to date — full history already imported."
+                imported == 1 -> "Imported 1 earlier weigh-in."
+                else -> "Imported $imported earlier weigh-ins."
+            }
+            _state.value = _state.value.copy(syncing = false, syncStatus = status)
+            if (imported != null && imported > 0) load(preserveSyncStatus = status)
+        }
+    }
+
     private fun load(preserveSyncStatus: String? = null) {
         _state.value = _state.value.copy(isLoading = true)
         viewModelScope.launch {
@@ -90,6 +110,10 @@ class WeightViewModel(
                     else -> HcAvailability.NEEDS_SETUP
                 }
             }.getOrDefault(HcAvailability.UNAVAILABLE)
+            val currentTrendLb = points.lastOrNull()?.emaLb
+            val weeklyRateLb = if (points.size >= 8) {
+                points.last().emaLb - points[points.size - 8].emaLb
+            } else null
             val range = _state.value.selectedRange
             _state.value = _state.value.copy(
                 allPoints = points,
@@ -98,6 +122,8 @@ class WeightViewModel(
                 isLoading = false,
                 hc = hc,
                 syncStatus = preserveSyncStatus ?: _state.value.syncStatus,
+                currentTrendLb = currentTrendLb,
+                weeklyRateLb = weeklyRateLb,
             )
         }
     }
