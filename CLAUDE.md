@@ -154,6 +154,23 @@ HC sync + manual entry + trend chart). Phase 5 — **chart fixes + zoom** (brigh
 tap-to-**Expand** a chart to a full-screen `ChartDetailScreen` with pinch-zoom / drag-pan / landscape).
 Schema is now on **real Room migrations** (no more `fallbackToDestructiveMigration`).
 
+**User-testing-feedback-2 run** (branch `feature/user-testing-feedback-2`, addresses the round-2
+`USER_TESTING.md`; 391 tests green): **P1** — meal **names** on groups (schema v4→v5 `mealName` +
+`MIGRATION_4_5`), groups **collapsed by default**, describe-a-meal "Add as meal" / "Save meal & add" +
+Back button. **P2** — **date-navigable Dashboard** (`selectedDate` drives `dayFoods` via flatMapLatest;
+day navigator ◀▶ + calendar + swipe; +Add / Describe-a-meal / Saved-meals log to the chosen day via
+nav-arg VM factories — fixes "can't add saved meals to prior days"). **P3a** — Weight hub **headline**
+(trend + lb/wk), trend-chart **Expand**→zoom parity, **"Re-import full history"** (`sync(fullHistory=true)`
+— incremental sync only pulls records *newer* than the latest stored, so backfilled older HC weigh-ins
+were never imported; chart slice/series were already correct). **P3b** — Dashboard **cards open dedicated
+chart pages** (`ChartType.MACROS` added; TDEE card→Expenditure, Macros card→donut page). **P4** — LLM
+parser now **surfaces the provider's real `error.message`** on terminal 400s (root cause of "Haiku didn't
+work" was an Anthropic **key with no credit balance** — HTTP 400 "credit balance too low" — not a code
+bug; model id/headers/shape are correct). **P5** — **TDEE engine back-test** vs a real 559-day log
+(`domain/src/test/resources/TDEESampleData.csv`): engine empirical estimate reconciles to **−0.0%** of
+energy-balance ground truth, EMA stable under sparse weigh-ins — **engine validated, no tuning needed**.
+Branch is committed per-phase but **not yet merged/pushed** (awaiting the user's call).
+
 **Health Connect testing (verified path):** HC needs **platform HC (Android 14+ / API 34)** — works on
 the `tdee_phone` emulator. It does NOT work on the Pixel 3 (`REDACTED`, Android 12) — that uses the
 *legacy standalone* HC app, which `connect-client 1.1.0` doesn't drive (the permission gateway bounces;
