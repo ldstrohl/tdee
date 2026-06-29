@@ -178,6 +178,21 @@ class LlmFoodParserTest {
     @Test
     fun `anthropic bad response`() = assertBadResponse(anthropicAdapter())
 
+    @Test
+    fun `terminal 400 surfaces the provider error message instead of a generic one`() {
+        // Real-world case: an Anthropic key with no credit returns 400 with an actionable reason.
+        val body = """{"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API."}}"""
+        server.enqueue(MockResponse().setBody(body).setResponseCode(400))
+        val result = runBlocking { anthropicAdapter().parse("x", "claude-haiku-4-5", "KEY") }
+        assertTrue(result is ParseResult.Failure)
+        val failure = result as ParseResult.Failure
+        assertTrue(
+            "expected the provider message surfaced, got '${failure.message}'",
+            failure.message.contains("credit balance is too low"),
+        )
+        assertEquals("400 is terminal — no retry", 1, server.requestCount)
+    }
+
     // -----------------------------------------------------------------------
     // LlmFoodParser dispatch
     // -----------------------------------------------------------------------

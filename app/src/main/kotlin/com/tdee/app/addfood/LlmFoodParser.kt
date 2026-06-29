@@ -205,7 +205,8 @@ private suspend fun executeWithRetry(client: OkHttpClient, request: Request): Ht
                     if (retryable && attempt < MAX_ATTEMPTS - 1) {
                         // fall through to backoff + retry
                     } else {
-                        return@withContext HttpOutcome.Error(mapHttpError(code))
+                        val errBody = response.body?.string().orEmpty()
+                        return@withContext HttpOutcome.Error(mapHttpError(code, errBody))
                     }
                 }
             } catch (_: IOException) {
@@ -223,16 +224,26 @@ private suspend fun executeWithRetry(client: OkHttpClient, request: Request): Ht
         lastError
     }
 
-private fun mapHttpError(code: Int): ParseResult.Failure = when {
+private fun mapHttpError(code: Int, body: String): ParseResult.Failure = when {
     code == 401 || code == 403 ->
         ParseResult.Failure(ParseErrorKind.AUTH, "Invalid API key — check it in Settings.")
     code == 429 ->
         ParseResult.Failure(ParseErrorKind.RATE_LIMITED, "Rate limited — try again in a moment.")
     code in 500..599 ->
         ParseResult.Failure(ParseErrorKind.SERVER, "The provider had an error — try again.")
+    // Other terminal errors (notably 400 — bad request, model not found, "credit balance too low",
+    // etc.) carry an actionable reason from the provider. Surface it instead of a generic message.
     else ->
-        ParseResult.Failure(ParseErrorKind.UNKNOWN, "Couldn't parse the meal — try again.")
+        ParseResult.Failure(
+            ParseErrorKind.UNKNOWN,
+            extractProviderError(body) ?: "Couldn't parse the meal — try again.",
+        )
 }
+
+/** Provider error string from its JSON envelope. Gemini/OpenAI/Anthropic all use `error.message`. */
+private fun extractProviderError(body: String): String? =
+    runCatching { JSONObject(body).getJSONObject("error").getString("message") }
+        .getOrNull()?.takeIf { it.isNotBlank() }
 
 /**
  * Pulls the model's JSON text out of a provider envelope via [innerText], then parses it into
