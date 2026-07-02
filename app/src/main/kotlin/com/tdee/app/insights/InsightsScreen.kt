@@ -89,10 +89,14 @@ fun InsightsScreen(
         }
 
         // Trend chart section
-        TrendChartSection(
-            state = state,
+        WeightTrendPanel(
+            points = state.visiblePoints,
+            selectedRange = state.selectedRange,
             onRangeSelected = { viewModel.setRange(it) },
+            predictionOn = state.predictionOn,
             onPredictionToggle = { viewModel.setPrediction(!state.predictionOn) },
+            projection = state.projection,
+            isLoading = state.isLoading,
             onMaximize = { onMaximize(ChartType.TREND) },
         )
 
@@ -128,14 +132,19 @@ fun InsightsScreen(
 }
 
 // ---------------------------------------------------------------------------
-// Trend chart section: pills + toggle + chart
+// Weight trend panel: header/Expand + range pills + prediction toggle + chart.
+// Shared by Insights and the Weight screen — do not fork this composable.
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun TrendChartSection(
-    state: InsightsUiState,
+internal fun WeightTrendPanel(
+    points: List<WeightPointLb>,
+    selectedRange: WeightRange,
     onRangeSelected: (WeightRange) -> Unit,
+    predictionOn: Boolean,
     onPredictionToggle: () -> Unit,
+    projection: ProjectionUi,
+    isLoading: Boolean,
     onMaximize: () -> Unit = {},
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -145,7 +154,7 @@ private fun TrendChartSection(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text("Weight Trend", style = MaterialTheme.typography.titleMedium)
-            if (state.visiblePoints.size >= 2) {
+            if (points.size >= 2) {
                 TextButton(onClick = onMaximize) { Text("Expand ⤢") }
             }
         }
@@ -159,7 +168,7 @@ private fun TrendChartSection(
             WeightRange.values().forEach { range ->
                 Pill(
                     label = range.label,
-                    active = range == state.selectedRange,
+                    active = range == selectedRange,
                     onClick = { onRangeSelected(range) },
                 )
             }
@@ -168,14 +177,14 @@ private fun TrendChartSection(
         Row(modifier = Modifier.fillMaxWidth()) {
             Pill(
                 label = "🔮 Prediction",
-                active = state.predictionOn,
+                active = predictionOn,
                 onClick = onPredictionToggle,
             )
         }
 
         // Chart or placeholder
         when {
-            state.isLoading -> {
+            isLoading -> {
                 Box(
                     modifier = Modifier.fillMaxWidth().height(220.dp),
                     contentAlignment = Alignment.Center,
@@ -184,7 +193,7 @@ private fun TrendChartSection(
                 }
             }
 
-            state.visiblePoints.size < 2 -> {
+            points.size < 2 -> {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -204,10 +213,10 @@ private fun TrendChartSection(
 
             else -> {
                 // Goal line always shows when a goal is set; the projection LINES only when toggled on.
-                val goalLbAlways = (state.projection as? ProjectionUi.Ready)?.goalLb
-                val projectionArg = if (state.predictionOn) state.projection else ProjectionUi.NoGoal
+                val goalLbAlways = (projection as? ProjectionUi.Ready)?.goalLb
+                val projectionArg = if (predictionOn) projection else ProjectionUi.NoGoal
                 WeightTrendChart(
-                    points = state.visiblePoints,
+                    points = points,
                     goalLb = goalLbAlways,
                     projection = projectionArg,
                     modifier = Modifier.clickable(onClick = onMaximize),

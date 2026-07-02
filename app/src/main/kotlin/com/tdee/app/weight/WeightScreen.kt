@@ -1,17 +1,13 @@
 package com.tdee.app.weight
 
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -24,12 +20,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.tdee.app.insights.Pill
-import com.tdee.app.insights.ProjectionUi
-import com.tdee.app.insights.WeightRange
-import com.tdee.app.insights.WeightTrendChart
+import com.tdee.app.insights.WeightTrendPanel
 
 @Composable
 fun WeightScreen(
@@ -75,64 +67,17 @@ fun WeightScreen(
             }
         }
 
-        // Trend chart section
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("Trend", style = MaterialTheme.typography.titleMedium)
-            if (state.visiblePoints.size >= 2) {
-                TextButton(onClick = onExpandChart) { Text("Expand ⤢") }
-            }
-        }
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            WeightRange.values().forEach { range ->
-                Pill(
-                    label = range.label,
-                    active = range == state.selectedRange,
-                    onClick = { viewModel.setRange(range) },
-                )
-            }
-        }
-        when {
-            state.isLoading -> {
-                Box(
-                    modifier = Modifier.fillMaxWidth().height(220.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text("Loading…", style = MaterialTheme.typography.bodyMedium)
-                }
-            }
-            state.visiblePoints.size < 2 -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(220.dp)
-                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = "Add weigh-ins to see your trend",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(16.dp),
-                    )
-                }
-            }
-            else -> {
-                WeightTrendChart(
-                    points = state.visiblePoints,
-                    goalLb = state.goalLb,
-                    projection = ProjectionUi.NoGoal,
-                )
-            }
-        }
+        // Trend chart section (shared with Insights — see WeightTrendPanel)
+        WeightTrendPanel(
+            points = state.visiblePoints,
+            selectedRange = state.selectedRange,
+            onRangeSelected = viewModel::setRange,
+            predictionOn = state.predictionOn,
+            onPredictionToggle = { viewModel.setPrediction(!state.predictionOn) },
+            projection = state.projection,
+            isLoading = state.isLoading,
+            onMaximize = onExpandChart,
+        )
 
         // Health Connect sync
         Card(modifier = Modifier.fillMaxWidth()) {

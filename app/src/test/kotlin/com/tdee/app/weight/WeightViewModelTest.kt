@@ -10,6 +10,7 @@ import com.tdee.app.data.TdeeRepository
 import com.tdee.app.data.UserProfileEntity
 import com.tdee.app.data.WeightEntryEntity
 import com.tdee.app.data.WeightSource
+import com.tdee.app.insights.ProjectionUi
 import com.tdee.app.insights.WeightRange
 import com.tdee.domain.ActivityLevel
 import com.tdee.domain.Sex
@@ -22,6 +23,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -231,5 +233,30 @@ class WeightViewModelTest {
         val s = vm.state.first { !it.syncing && it.syncStatus != null }
 
         assertEquals("Up to date — full history already imported.", s.syncStatus)
+    }
+
+    @Test
+    fun `projection is Ready when a goal and data exist`() = runTest {
+        // @Before seeds a 75 kg goal, so the projection should build to Ready with a goal in lb.
+        val vm = makeVm()
+        val s = vm.awaitLoaded()
+
+        val projReady = s.projection as? ProjectionUi.Ready
+        assertNotNull("projection is Ready when a goal is set", projReady)
+        assertEquals(s.goalLb, projReady!!.goalLb)
+    }
+
+    @Test
+    fun `predictionOn defaults to false and setPrediction flips it`() = runTest {
+        val vm = makeVm()
+        vm.awaitLoaded()
+
+        assertFalse(vm.state.value.predictionOn)
+
+        vm.setPrediction(true)
+        assertTrue(vm.state.value.predictionOn)
+
+        vm.setPrediction(false)
+        assertFalse(vm.state.value.predictionOn)
     }
 }

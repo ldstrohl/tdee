@@ -10,8 +10,10 @@ import com.tdee.app.data.HealthConnectSource
 import com.tdee.app.data.HealthConnectSyncManager
 import com.tdee.app.data.TdeeRepository
 import com.tdee.app.insights.KG_TO_LB
+import com.tdee.app.insights.ProjectionUi
 import com.tdee.app.insights.WeightPointLb
 import com.tdee.app.insights.WeightRange
+import com.tdee.app.insights.buildProjectionUi
 import com.tdee.app.insights.toLb
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -27,6 +29,8 @@ data class WeightUiState(
     val selectedRange: WeightRange = WeightRange.M3,
     /** Goal weight in lb for the dashed goal line, or null when no goal is set. */
     val goalLb: Double? = null,
+    val predictionOn: Boolean = false,
+    val projection: ProjectionUi = ProjectionUi.NoGoal,
     val isLoading: Boolean = true,
     val hc: HcAvailability = HcAvailability.UNKNOWN,
     val syncing: Boolean = false,
@@ -40,9 +44,8 @@ data class WeightUiState(
 
 /**
  * Drives the Weight hub: the weight trend chart, a Health Connect "sync now" affordance, and
- * (via navigation) manual entry. The trend chart reuses the Insights `WeightTrendChart` composable
- * and the shared lb-conversion helpers; only the goal line is drawn here (no prediction overlay —
- * that lives in Insights).
+ * (via navigation) manual entry. The trend chart reuses the Insights `WeightTrendPanel` composable
+ * (goal line, range pills, and prediction toggle included) and the shared lb-conversion helpers.
  */
 class WeightViewModel(
     private val repo: TdeeRepository,
@@ -60,6 +63,11 @@ class WeightViewModel(
     fun setRange(range: WeightRange) {
         val cur = _state.value
         _state.value = cur.copy(selectedRange = range, visiblePoints = slice(cur.allPoints, range))
+    }
+
+    /** Toggle prediction without touching the selected range. */
+    fun setPrediction(on: Boolean) {
+        _state.value = _state.value.copy(predictionOn = on)
     }
 
     /** Re-fetch the chart + HC state (e.g. on screen resume after manual entry or HC changes). */
@@ -102,7 +110,9 @@ class WeightViewModel(
         _state.value = _state.value.copy(isLoading = true)
         viewModelScope.launch {
             val points = runCatching { repo.weightSeries().map { it.toLb() } }.getOrDefault(emptyList())
-            val goalLb = runCatching { repo.weightProjection()?.goalKg?.times(KG_TO_LB) }.getOrNull()
+            val wp = runCatching { repo.weightProjection() }.getOrNull()
+            val goalLb = wp?.goalKg?.times(KG_TO_LB)
+            val projection = buildProjectionUi(wp)
             val hc = runCatching {
                 when {
                     !source.isAvailable() -> HcAvailability.UNAVAILABLE
@@ -119,6 +129,7 @@ class WeightViewModel(
                 allPoints = points,
                 visiblePoints = slice(points, range),
                 goalLb = goalLb,
+                projection = projection,
                 isLoading = false,
                 hc = hc,
                 syncStatus = preserveSyncStatus ?: _state.value.syncStatus,
