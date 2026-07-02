@@ -171,6 +171,31 @@ bug; model id/headers/shape are correct). **P5** — **TDEE engine back-test** v
 energy-balance ground truth, EMA stable under sparse weigh-ins — **engine validated, no tuning needed**.
 Branch is committed per-phase but **not yet merged/pushed** (awaiting the user's call).
 
+**User-testing-feedback-3 run** (branch `feature/user-testing-feedback-3`, addresses the round-3
+`USER_TESTING.md`; 375 tests green): **Phase A** — **6-month empirical TDEE window** (`tdeeWindowDays`
+14→180, EMA smoothing stays 14) with **precision-weighted (inverse-variance) shrinkage** of the Mifflin
+prior toward the empirical estimate, replacing the old linear FORMULA/BLEND scheme. Requires an
+**anchored-window / actual-span** fix (`TdeeEngine.empirical()`): anchor the window start to the first
+weigh-in and divide ΔEMA by the true span, so an empirical signal exists from day ~2 instead of pure
+formula for 6 months. `uncertaintyKcal` is now the real posterior SE `sqrt(1/(w_f+w_e))` (σ_W/σ_I measured
+from the user's own data, safe defaults below 8 obs). Validated by a data back-test on the real 559-day log
+(`reports/gen_report.py` → `reports/backtest.html`, old report archived `backtest_2026-06-28.html`):
+shrinkage tracks the falling TDEE **2.2× more accurately** through the ramp than a linear blend, negligible
+added jitter; reconciles to energy-balance truth at **+0.7%**. Decoupled the "Calibrating" UX badge from the
+averaging window via `CALIBRATION_DAYS=14` (else it would show for 6 months); method labels (BLEND/EMPIRICAL)
+still track the real window. App side: `Mappers.toDomain` uses the domain default (180) for `tdeeWindowDays`
+(following the `energyDensity` precedent — the column is now vestigial; **no migration**); `weightProjection`
+current-pace uses a fixed 14-day lookback (not the 180-day window). **Phase B** — **scale-by-multiplier** on
+every meal-logging path (`NewFoodItem.scaledBy(factor)`; optional `factor` on `logSavedMeal`/`repeatMeal`/
+`repeatEntry`; shared `MealMultiplierDialog` with preset chips for Saved-meals "Log" + History "Repeat";
+per-item "×" field on parse-confirm with live totals + non-lossy base values) + **save a single standalone
+entry as a meal** (`saveMealFromEntry`, "Save" action on standalone rows). **Phase C** — **shared trend
+panel** (`WeightTrendPanel`, primitives-driven, extracted from Insights) used by both Insights and the
+**Weight screen, which now has the 🔮 Prediction feature** (goal-pace + current-pace projection lines) —
+DRY, no reworked copy; Expand routes to the same `ChartDetailScreen`. All three phases verified on the
+`tdee_phone` emulator. Committed per-phase (`b32ce27`, `6497e92`, `917a928`) but **not yet merged/pushed**
+(awaiting the user's call). *(Note: `reports/` is gitignored — the back-test report is a local artifact.)*
+
 **Health Connect testing (verified path):** HC needs **platform HC (Android 14+ / API 34)** — works on
 the `tdee_phone` emulator. It does NOT work on the Pixel 3 (`REDACTED`, Android 12) — that uses the
 *legacy standalone* HC app, which `connect-client 1.1.0` doesn't drive (the permission gateway bounces;
