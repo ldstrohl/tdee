@@ -8,6 +8,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.tdee.app.TdeeApplication
 import com.tdee.app.data.NewFoodItem
 import com.tdee.app.data.TdeeRepository
+import com.tdee.app.data.scaledBy
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -31,8 +32,13 @@ data class EditableFoodItem(
     val fatG: String = "",
     val carbG: String = "",
     val grams: String = "",
+    /** Per-item scale multiplier, e.g. "1.5" for "50% more than the estimate". */
+    val factor: String = "1",
 ) {
     val kcalDouble: Double? get() = kcal.toDoubleOrNull()?.takeIf { it >= 0 }
+
+    /** Parsed multiplier; invalid/blank/non-positive input falls back to 1.0 (no scaling). */
+    val factorDouble: Double get() = factor.toDoubleOrNull()?.takeIf { it > 0 } ?: 1.0
 
     /** Savable when the name is non-blank and kcal is a valid non-negative number. */
     val isValid: Boolean get() = name.isNotBlank() && kcalDouble != null
@@ -59,18 +65,24 @@ data class ParseConfirmState(
     /** Save All is enabled when at least one item is valid. Invalid items are skipped on save. */
     val canSave: Boolean get() = items.any { it.isValid }
 
-    /** Totals computed over valid items only (matching what saveAll will persist). */
+    /** Totals computed over valid items only, scaled by each item's factor (matches saveAll). */
     val totalKcal: Double
-        get() = items.filter { it.isValid }.sumOf { it.kcalDouble ?: 0.0 }
+        get() = items.filter { it.isValid }.sumOf { (it.kcalDouble ?: 0.0) * it.factorDouble }
     val totalProteinG: Double
         get() = items.filter { it.isValid }
-            .sumOf { item -> item.proteinG.toDoubleOrNull()?.takeIf { v -> v >= 0 } ?: 0.0 }
+            .sumOf { item ->
+                (item.proteinG.toDoubleOrNull()?.takeIf { v -> v >= 0 } ?: 0.0) * item.factorDouble
+            }
     val totalFatG: Double
         get() = items.filter { it.isValid }
-            .sumOf { item -> item.fatG.toDoubleOrNull()?.takeIf { v -> v >= 0 } ?: 0.0 }
+            .sumOf { item ->
+                (item.fatG.toDoubleOrNull()?.takeIf { v -> v >= 0 } ?: 0.0) * item.factorDouble
+            }
     val totalCarbG: Double
         get() = items.filter { it.isValid }
-            .sumOf { item -> item.carbG.toDoubleOrNull()?.takeIf { v -> v >= 0 } ?: 0.0 }
+            .sumOf { item ->
+                (item.carbG.toDoubleOrNull()?.takeIf { v -> v >= 0 } ?: 0.0) * item.factorDouble
+            }
 }
 
 // ---------------------------------------------------------------------------
@@ -163,6 +175,7 @@ class ParseConfirmViewModel(
     fun setFatG(index: Int, v: String) = updateItem(index) { it.copy(fatG = v) }
     fun setCarbG(index: Int, v: String) = updateItem(index) { it.copy(carbG = v) }
     fun setGrams(index: Int, v: String) = updateItem(index) { it.copy(grams = v) }
+    fun setFactor(index: Int, v: String) = updateItem(index) { it.copy(factor = v) }
 
     fun addItem() = _state.update { it.copy(items = it.items + EditableFoodItem()) }
 
@@ -221,7 +234,7 @@ class ParseConfirmViewModel(
                 fatG = item.fatG.toDoubleOrNull()?.takeIf { v -> v >= 0 } ?: 0.0,
                 carbG = item.carbG.toDoubleOrNull()?.takeIf { v -> v >= 0 } ?: 0.0,
                 grams = item.grams.toDoubleOrNull()?.takeIf { v -> v >= 0 },
-            )
+            ).scaledBy(item.factorDouble)
         }
 
     // -----------------------------------------------------------------------

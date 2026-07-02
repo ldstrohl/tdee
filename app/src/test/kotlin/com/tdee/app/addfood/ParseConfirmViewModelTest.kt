@@ -245,6 +245,59 @@ class ParseConfirmViewModelTest {
     }
 
     // -----------------------------------------------------------------------
+    // Per-item multiplier (factor)
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `setFactor scales totals live without losing the base value`() = runTest {
+        vm.setText("apple")
+        vm.parse()
+        vm.setKcal(0, "100")
+        vm.setProteinG(0, "10")
+
+        vm.setFactor(0, "1.5")
+
+        assertEquals(150.0, vm.state.value.totalKcal, 0.001)
+        assertEquals(15.0, vm.state.value.totalProteinG, 0.001)
+        // Base (unscaled) value is preserved so the factor is re-adjustable.
+        assertEquals("100", vm.state.value.items[0].kcal)
+
+        // Re-adjusting the factor recomputes from the same base value (not lossy).
+        vm.setFactor(0, "0.5")
+        assertEquals(50.0, vm.state.value.totalKcal, 0.001)
+    }
+
+    @Test
+    fun `default factor of 1 does not change totals`() = runTest {
+        vm.setText("apple")
+        vm.parse()
+        vm.setKcal(0, "100")
+
+        assertEquals(100.0, vm.state.value.totalKcal, 0.001)
+    }
+
+    @Test
+    fun `saveAll applies each item's factor to the persisted kcal and macros`() = runTest {
+        vm.setText("apple and banana")
+        vm.parse()
+        vm.setKcal(0, "100")
+        vm.setProteinG(0, "10")
+        vm.setFactor(0, "1.5")
+        vm.setKcal(1, "200")
+        // banana keeps the default factor of 1 (no scaling)
+
+        vm.saveAll()
+        vm.saved.filter { it }.first()
+
+        val entries = repo.todayFoodEntries()
+        val apple = entries.first { it.name == "apple" }
+        val banana = entries.first { it.name == "banana" }
+        assertEquals(150.0, apple.kcal, 0.001)
+        assertEquals(15.0, apple.proteinG, 0.001)
+        assertEquals(200.0, banana.kcal, 0.001)
+    }
+
+    // -----------------------------------------------------------------------
     // saveAll uses addFoodGroup (shared mealId)
     // -----------------------------------------------------------------------
 

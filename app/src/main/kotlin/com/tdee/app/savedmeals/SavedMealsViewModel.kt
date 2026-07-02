@@ -22,9 +22,12 @@ class SavedMealsViewModel(
     val meals: StateFlow<List<SavedMealEntity>> = repo.observeSavedMeals()
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-    /** Logs the saved meal onto [logDate] (today when no date was passed via [factory]). */
-    fun logToDate(savedMealId: Long) {
-        viewModelScope.launch { repo.logSavedMeal(savedMealId, logDate) }
+    /**
+     * Logs the saved meal onto [logDate] (today when no date was passed via [factory]), scaled
+     * by [factor] (1.0 = no change).
+     */
+    fun logToDate(savedMealId: Long, factor: Double = 1.0) {
+        viewModelScope.launch { repo.logSavedMeal(savedMealId, logDate, factor) }
     }
 
     fun delete(savedMealId: Long) {

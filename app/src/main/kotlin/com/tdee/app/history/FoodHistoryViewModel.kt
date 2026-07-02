@@ -50,15 +50,15 @@ class FoodHistoryViewModel(private val repo: TdeeRepository) : ViewModel() {
         }
     }
 
-    fun repeatMeal(mealId: String) {
+    fun repeatMeal(mealId: String, factor: Double = 1.0) {
         viewModelScope.launch {
-            repo.repeatMeal(mealId, targetDate = null)
+            repo.repeatMeal(mealId, targetDate = null, factor = factor)
         }
     }
 
-    fun repeatEntry(id: Long) {
+    fun repeatEntry(id: Long, factor: Double = 1.0) {
         viewModelScope.launch {
-            repo.repeatEntry(id, targetDate = null)
+            repo.repeatEntry(id, targetDate = null, factor = factor)
         }
     }
 

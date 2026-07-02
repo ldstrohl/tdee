@@ -32,6 +32,22 @@ data class NewFoodItem(
 )
 
 /**
+ * Scales [NewFoodItem.kcal], [NewFoodItem.proteinG], [NewFoodItem.fatG], [NewFoodItem.carbG], and
+ * (when non-null) [NewFoodItem.grams] by [factor]. [NewFoodItem.name] is unchanged. `factor = 1.0`
+ * is an exact no-op.
+ */
+fun NewFoodItem.scaledBy(factor: Double): NewFoodItem = copy(
+    kcal = kcal * factor,
+    proteinG = proteinG * factor,
+    fatG = fatG * factor,
+    carbG = carbG * factor,
+    grams = grams?.let { it * factor },
+)
+
+/** Applies [scaledBy] to every item in the list. */
+fun List<NewFoodItem>.scaledBy(factor: Double): List<NewFoodItem> = map { it.scaledBy(factor) }
+
+/**
  * Integration layer between the Room data layer and the domain TDEE engine.
  *
  * All compute functions require that a [UserProfileEntity] exists in the database for the current
@@ -631,6 +647,32 @@ class TdeeRepository(
             )
         }
 
+    /**
+     * Snapshots the standalone food entry with [entryId] and saves it as a one-item named
+     * reusable meal.
+     * @return the auto-generated saved meal id.
+     */
+    suspend fun saveMealFromEntry(name: String, entryId: Long): Long =
+        withContext(Dispatchers.IO) {
+            val uid = currentUser.userId()
+            val entry = foodDao.getById(entryId)
+            val items = listOfNotNull(entry).map {
+                SavedMealItem(
+                    name = it.name, kcal = it.kcal, proteinG = it.proteinG,
+                    fatG = it.fatG, carbG = it.carbG,
+                    grams = it.grams.takeIf { g -> g > 0 },
+                )
+            }
+            savedMealDao.insert(
+                SavedMealEntity(
+                    userId = uid,
+                    name = name,
+                    items = items,
+                    createdAt = clock.instant(),
+                )
+            )
+        }
+
     /** Reactive stream of saved meals for the current user, newest first. */
     fun observeSavedMeals(): Flow<List<SavedMealEntity>> =
         savedMealDao.observeForUser(currentUser.userId())
@@ -641,10 +683,15 @@ class TdeeRepository(
     }
 
     /**
-     * Logs the saved meal with [savedMealId] as a new food group on [loggedDate] (today when null).
+     * Logs the saved meal with [savedMealId] as a new food group on [loggedDate] (today when null),
+     * scaling every item by [factor] (1.0 = no change, e.g. 1.5 = "50% more than the estimate").
      * @return the new mealId, or an empty string if the saved meal was not found.
      */
-    suspend fun logSavedMeal(savedMealId: Long, loggedDate: LocalDate? = null): String =
+    suspend fun logSavedMeal(
+        savedMealId: Long,
+        loggedDate: LocalDate? = null,
+        factor: Double = 1.0,
+    ): String =
         withContext(Dispatchers.IO) {
             val meal = savedMealDao.getById(savedMealId) ?: return@withContext ""
             val items = meal.items.map {
@@ -652,7 +699,7 @@ class TdeeRepository(
                     name = it.name, kcal = it.kcal, proteinG = it.proteinG,
                     fatG = it.fatG, carbG = it.carbG, grams = it.grams,
                 )
-            }
+            }.scaledBy(factor)
             addFoodGroup(items, loggedDate, meal.name)
         }
 
@@ -692,10 +739,11 @@ class TdeeRepository(
         }
 
     /**
-     * Re-inserts the entries of [mealId] as a new food group on [targetDate] (today when null).
+     * Re-inserts the entries of [mealId] as a new food group on [targetDate] (today when null),
+     * scaling every item by [factor] (1.0 = no change, e.g. 1.5 = "50% more than the estimate").
      * @return the new mealId.
      */
-    suspend fun repeatMeal(mealId: String, targetDate: LocalDate? = null): String =
+    suspend fun repeatMeal(mealId: String, targetDate: LocalDate? = null, factor: Double = 1.0): String =
         withContext(Dispatchers.IO) {
             val uid = currentUser.userId()
             val entries = foodDao.getByMeal(uid, mealId)
@@ -706,23 +754,29 @@ class TdeeRepository(
                     fatG = it.fatG, carbG = it.carbG,
                     grams = it.grams.takeIf { g -> g > 0 },
                 )
-            }
+            }.scaledBy(factor)
             addFoodGroup(items, targetDate, sourceMealName)
         }
 
     /**
-     * Re-inserts the food entry with [id] as a standalone entry on [targetDate] (today when null).
+     * Re-inserts the food entry with [id] as a standalone entry on [targetDate] (today when null),
+     * scaling it by [factor] (1.0 = no change, e.g. 1.5 = "50% more than the estimate").
      */
-    suspend fun repeatEntry(id: Long, targetDate: LocalDate? = null) =
+    suspend fun repeatEntry(id: Long, targetDate: LocalDate? = null, factor: Double = 1.0) =
         withContext(Dispatchers.IO) {
             val entry = foodDao.getById(id) ?: return@withContext
-            addFood(
-                name = entry.name,
-                kcal = entry.kcal,
-                proteinG = entry.proteinG,
-                fatG = entry.fatG,
-                carbG = entry.carbG,
+            val item = NewFoodItem(
+                name = entry.name, kcal = entry.kcal, proteinG = entry.proteinG,
+                fatG = entry.fatG, carbG = entry.carbG,
                 grams = entry.grams.takeIf { it > 0 },
+            ).scaledBy(factor)
+            addFood(
+                name = item.name,
+                kcal = item.kcal,
+                proteinG = item.proteinG,
+                fatG = item.fatG,
+                carbG = item.carbG,
+                grams = item.grams,
                 mealId = null,
                 loggedDate = targetDate,
             )

@@ -147,6 +147,10 @@ class DashboardViewModel(
         viewModelScope.launch { repo.saveMealFromGroup(name, mealId) }
     }
 
+    fun saveMealFromEntry(entryId: Long, name: String) {
+        viewModelScope.launch { repo.saveMealFromEntry(name, entryId) }
+    }
+
     // -----------------------------------------------------------------------
     // Date navigation
     // -----------------------------------------------------------------------

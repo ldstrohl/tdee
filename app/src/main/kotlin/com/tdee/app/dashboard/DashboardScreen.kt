@@ -160,6 +160,7 @@ fun DashboardScreen(
             onDeleteMeal = { viewModel.deleteMeal(it) },
             onEditFood = onEditFood,
             onSaveMeal = { mealId, name -> viewModel.saveMealFromGroup(mealId, name) },
+            onSaveEntry = { entryId, name -> viewModel.saveMealFromEntry(entryId, name) },
             onSavedMeals = { onSavedMeals(selectedDate) },
             onFoodHistory = onFoodHistory,
             onPrevDay = { viewModel.prevDay() },
@@ -319,6 +320,7 @@ private fun TodayFoodSection(
     onDeleteMeal: (String) -> Unit,
     onEditFood: (Long) -> Unit,
     onSaveMeal: (mealId: String, name: String) -> Unit,
+    onSaveEntry: (entryId: Long, name: String) -> Unit,
     onSavedMeals: () -> Unit,
     onFoodHistory: () -> Unit,
     onPrevDay: () -> Unit,
@@ -369,6 +371,7 @@ private fun TodayFoodSection(
                 onDeleteEntry = onDelete,
                 onDeleteMeal = onDeleteMeal,
                 onSaveMeal = onSaveMeal,
+                onSaveEntry = onSaveEntry,
             )
         }
     }

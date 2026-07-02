@@ -221,6 +221,7 @@ fun ParseConfirmScreen(
                 onFat = { viewModel.setFatG(index, it) },
                 onCarb = { viewModel.setCarbG(index, it) },
                 onGrams = { viewModel.setGrams(index, it) },
+                onFactor = { viewModel.setFactor(index, it) },
                 onRemove = { viewModel.removeItem(index) },
             )
         }
@@ -279,6 +280,7 @@ private fun ItemCard(
     onFat: (String) -> Unit,
     onCarb: (String) -> Unit,
     onGrams: (String) -> Unit,
+    onFactor: (String) -> Unit,
     onRemove: () -> Unit,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -350,6 +352,15 @@ private fun ItemCard(
                     onValueChange = onGrams,
                     label = { Text("Serving (g)") },
                     placeholder = { Text("—") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                )
+                OutlinedTextField(
+                    value = item.factor,
+                    onValueChange = onFactor,
+                    label = { Text("×") },
+                    placeholder = { Text("1") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
                     modifier = Modifier.weight(1f),

@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.tdee.app.data.FoodEntryEntity
+import com.tdee.app.ui.MealMultiplierDialog
 
 // ---------------------------------------------------------------------------
 // Display model — shared between Dashboard and History
@@ -55,8 +56,9 @@ internal fun List<FoodEntryEntity>.toDisplayItems(): List<FoodDisplayItem> {
  * Renders a grouped food entry list with optional repeat and save actions.
  *
  * When [onRepeatMeal]/[onRepeatEntry] are non-null, a "Repeat" action appears on group headers
- * and standalone rows. When [onSaveMeal] is non-null, a "Save" action appears on group headers
- * that opens a name dialog before calling back.
+ * and standalone rows; tapping it opens [MealMultiplierDialog] and calls back with the chosen
+ * scale factor. When [onSaveMeal]/[onSaveEntry] are non-null, a "Save" action appears on group
+ * headers / standalone rows respectively that opens a name dialog before calling back.
  */
 @Composable
 internal fun FoodEntryList(
@@ -64,20 +66,22 @@ internal fun FoodEntryList(
     onEditFood: (Long) -> Unit,
     onDeleteEntry: (Long) -> Unit,
     onDeleteMeal: (String) -> Unit,
-    onRepeatMeal: ((String) -> Unit)? = null,
-    onRepeatEntry: ((Long) -> Unit)? = null,
+    onRepeatMeal: ((mealId: String, factor: Double) -> Unit)? = null,
+    onRepeatEntry: ((id: Long, factor: Double) -> Unit)? = null,
     onSaveMeal: ((mealId: String, name: String) -> Unit)? = null,
+    onSaveEntry: ((entryId: Long, name: String) -> Unit)? = null,
 ) {
     val displayItems = remember(foods) { foods.toDisplayItems() }
     val expandedState = remember { mutableStateMapOf<String, Boolean>() }
 
-    // Dialog state for "Save meal" name prompt
+    // Dialog state for "Save meal" name prompt — shared by group and standalone saves.
     var savingMealId by remember { mutableStateOf<String?>(null) }
+    var savingEntryId by remember { mutableStateOf<Long?>(null) }
     var saveName by remember { mutableStateOf("") }
 
-    if (savingMealId != null) {
+    if (savingMealId != null || savingEntryId != null) {
         AlertDialog(
-            onDismissRequest = { savingMealId = null; saveName = "" },
+            onDismissRequest = { savingMealId = null; savingEntryId = null; saveName = "" },
             title = { Text("Save meal") },
             text = {
                 OutlinedTextField(
@@ -90,20 +94,42 @@ internal fun FoodEntryList(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        val mid = savingMealId
                         val n = saveName.trim()
-                        if (mid != null && n.isNotBlank()) {
-                            onSaveMeal?.invoke(mid, n)
+                        if (n.isNotBlank()) {
+                            savingMealId?.let { onSaveMeal?.invoke(it, n) }
+                            savingEntryId?.let { onSaveEntry?.invoke(it, n) }
                         }
                         savingMealId = null
+                        savingEntryId = null
                         saveName = ""
                     },
                     enabled = saveName.isNotBlank(),
                 ) { Text("Save") }
             },
             dismissButton = {
-                TextButton(onClick = { savingMealId = null; saveName = "" }) { Text("Cancel") }
+                TextButton(onClick = { savingMealId = null; savingEntryId = null; saveName = "" }) {
+                    Text("Cancel")
+                }
             },
+        )
+    }
+
+    // Dialog state for "Repeat" scale-factor prompt — shared by group and standalone repeats.
+    var repeatingMealId by remember { mutableStateOf<String?>(null) }
+    var repeatingEntryId by remember { mutableStateOf<Long?>(null) }
+
+    if (repeatingMealId != null) {
+        val mid = repeatingMealId!!
+        MealMultiplierDialog(
+            onConfirm = { factor -> onRepeatMeal?.invoke(mid, factor); repeatingMealId = null },
+            onDismiss = { repeatingMealId = null },
+        )
+    }
+    if (repeatingEntryId != null) {
+        val eid = repeatingEntryId!!
+        MealMultiplierDialog(
+            onConfirm = { factor -> onRepeatEntry?.invoke(eid, factor); repeatingEntryId = null },
+            onDismiss = { repeatingEntryId = null },
         )
     }
 
@@ -136,8 +162,16 @@ internal fun FoodEntryList(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                    if (onSaveEntry != null) {
+                        TextButton(onClick = {
+                            savingEntryId = displayItem.entry.id
+                            saveName = ""
+                        }) {
+                            Text("Save")
+                        }
+                    }
                     if (onRepeatEntry != null) {
-                        TextButton(onClick = { onRepeatEntry(displayItem.entry.id) }) {
+                        TextButton(onClick = { repeatingEntryId = displayItem.entry.id }) {
                             Text("Repeat")
                         }
                     }
@@ -179,7 +213,7 @@ internal fun FoodEntryList(
                             }
                         }
                         if (onRepeatMeal != null) {
-                            TextButton(onClick = { onRepeatMeal(displayItem.mealId) }) {
+                            TextButton(onClick = { repeatingMealId = displayItem.mealId }) {
                                 Text("Repeat")
                             }
                         }

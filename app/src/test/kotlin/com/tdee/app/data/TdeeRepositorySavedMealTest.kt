@@ -28,9 +28,10 @@ import java.time.ZoneOffset
  *   - [TdeeRepository.saveMeal] + [TdeeRepository.observeSavedMeals] round-trip
  *   - JSON round-trip for items with null grams
  *   - [TdeeRepository.saveMealFromGroup] snapshots a group
- *   - [TdeeRepository.logSavedMeal] inserts a new group matching saved items
- *   - [TdeeRepository.repeatMeal] creates a distinct new group with same item values
- *   - [TdeeRepository.repeatEntry] re-inserts a standalone copy
+ *   - [TdeeRepository.saveMealFromEntry] snapshots a standalone entry as a one-item meal
+ *   - [TdeeRepository.logSavedMeal] inserts a new group matching saved items, optionally scaled
+ *   - [TdeeRepository.repeatMeal] creates a distinct new group with same (or scaled) item values
+ *   - [TdeeRepository.repeatEntry] re-inserts a standalone copy, optionally scaled
  *   - [TdeeRepository.foodEntriesForDate] returns the right day's entries
  *
  * Uses an in-memory Room v4 database, a fake [CurrentUser], and a fixed [Clock].
@@ -166,6 +167,36 @@ class TdeeRepositorySavedMealTest {
     }
 
     // -----------------------------------------------------------------------
+    // saveMealFromEntry
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `saveMealFromEntry snapshots the standalone entry as a one-item meal`() = runTest {
+        repo.addFood(name = "Apple", kcal = 95.0, proteinG = 0.5, fatG = 0.3, carbG = 25.0, grams = 180.0)
+        val entry = db.foodEntryDao().getActive(userId).first()
+
+        repo.saveMealFromEntry("My Apple", entry.id)
+
+        val meals = repo.observeSavedMeals().first()
+        assertEquals(1, meals.size)
+        assertEquals("My Apple", meals[0].name)
+        assertEquals(1, meals[0].items.size)
+        val item = meals[0].items[0]
+        assertEquals("Apple", item.name)
+        assertEquals(95.0, item.kcal, 0.001)
+        assertEquals(180.0, item.grams!!, 0.001)
+    }
+
+    @Test
+    fun `saveMealFromEntry with unknown entryId creates an empty-item meal`() = runTest {
+        repo.saveMealFromEntry("Ghost", 9999L)
+
+        val meals = repo.observeSavedMeals().first()
+        assertEquals(1, meals.size)
+        assertTrue(meals[0].items.isEmpty())
+    }
+
+    // -----------------------------------------------------------------------
     // logSavedMeal
     // -----------------------------------------------------------------------
 
@@ -197,6 +228,37 @@ class TdeeRepositorySavedMealTest {
         assertTrue(db.foodEntryDao().getActive(userId).isEmpty())
     }
 
+    @Test
+    fun `logSavedMeal with factor scales kcal and macros`() = runTest {
+        val savedId = repo.saveMeal(
+            "Dinner",
+            listOf(NewFoodItem("Pasta", 350.0, 12.0, 3.0, 68.0, 200.0)),
+        )
+
+        repo.logSavedMeal(savedId, factor = 1.5)
+
+        val entries = db.foodEntryDao().getActive(userId)
+        assertEquals(1, entries.size)
+        assertEquals(525.0, entries[0].kcal, 0.001)
+        assertEquals(18.0, entries[0].proteinG, 0.001)
+        assertEquals(4.5, entries[0].fatG, 0.001)
+        assertEquals(102.0, entries[0].carbG, 0.001)
+        assertEquals(300.0, entries[0].grams, 0.001)
+    }
+
+    @Test
+    fun `logSavedMeal with default factor 1point0 leaves values unchanged`() = runTest {
+        val savedId = repo.saveMeal(
+            "Dinner",
+            listOf(NewFoodItem("Pasta", 350.0, 12.0, 3.0, 68.0, 200.0)),
+        )
+
+        repo.logSavedMeal(savedId)
+
+        val entries = db.foodEntryDao().getActive(userId)
+        assertEquals(350.0, entries[0].kcal, 0.001)
+    }
+
     // -----------------------------------------------------------------------
     // repeatMeal
     // -----------------------------------------------------------------------
@@ -225,6 +287,20 @@ class TdeeRepositorySavedMealTest {
         assertEquals(300.0, repeated.first { it.name == "Oats" }.kcal, 0.001)
     }
 
+    @Test
+    fun `repeatMeal with factor scales every item`() = runTest {
+        val originalMealId = repo.addFoodGroup(
+            listOf(NewFoodItem("Oats", 300.0, 10.0, 5.0, 55.0, null)),
+        )
+
+        val newMealId = repo.repeatMeal(originalMealId, factor = 2.0)
+
+        val repeated = db.foodEntryDao().getActive(userId).filter { it.mealId == newMealId }
+        assertEquals(1, repeated.size)
+        assertEquals(600.0, repeated[0].kcal, 0.001)
+        assertEquals(20.0, repeated[0].proteinG, 0.001)
+    }
+
     // -----------------------------------------------------------------------
     // repeatEntry
     // -----------------------------------------------------------------------
@@ -242,6 +318,19 @@ class TdeeRepositorySavedMealTest {
         assertEquals("Apple", copy.name)
         assertEquals(95.0, copy.kcal, 0.001)
         assertNull("Repeated standalone entry must have null mealId", copy.mealId)
+    }
+
+    @Test
+    fun `repeatEntry with factor scales the copy`() = runTest {
+        repo.addFood(name = "Apple", kcal = 100.0, proteinG = 2.0, fatG = 0.0, carbG = 20.0)
+        val original = db.foodEntryDao().getActive(userId).first()
+
+        repo.repeatEntry(original.id, factor = 0.5)
+
+        val copy = db.foodEntryDao().getActive(userId).first { it.id != original.id }
+        assertEquals(50.0, copy.kcal, 0.001)
+        assertEquals(1.0, copy.proteinG, 0.001)
+        assertEquals(10.0, copy.carbG, 0.001)
     }
 
     // -----------------------------------------------------------------------

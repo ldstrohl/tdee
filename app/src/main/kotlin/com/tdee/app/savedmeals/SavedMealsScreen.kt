@@ -23,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.tdee.app.ui.MealMultiplierDialog
 
 @Composable
 fun SavedMealsScreen(
@@ -32,6 +33,20 @@ fun SavedMealsScreen(
     val meals by viewModel.meals.collectAsState()
     // Track which meals were just logged to show a brief confirmation.
     var lastLoggedId by remember { mutableStateOf<Long?>(null) }
+    // Meal awaiting a scale-factor pick before logging.
+    var loggingMealId by remember { mutableStateOf<Long?>(null) }
+
+    if (loggingMealId != null) {
+        val mealId = loggingMealId!!
+        MealMultiplierDialog(
+            onConfirm = { factor ->
+                viewModel.logToDate(mealId, factor)
+                lastLoggedId = mealId
+                loggingMealId = null
+            },
+            onDismiss = { loggingMealId = null },
+        )
+    }
 
     Column(
         modifier = Modifier
@@ -89,10 +104,7 @@ fun SavedMealsScreen(
                                 }
                             }
                             Row {
-                                TextButton(onClick = {
-                                    viewModel.logToDate(meal.id)
-                                    lastLoggedId = meal.id
-                                }) { Text("Log") }
+                                TextButton(onClick = { loggingMealId = meal.id }) { Text("Log") }
                                 TextButton(onClick = { viewModel.delete(meal.id) }) {
                                     Text("Delete", color = MaterialTheme.colorScheme.error)
                                 }
