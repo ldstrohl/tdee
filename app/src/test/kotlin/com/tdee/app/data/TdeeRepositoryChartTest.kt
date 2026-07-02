@@ -269,18 +269,18 @@ class TdeeRepositoryChartTest {
     @Test
     fun `expenditureSeries calibrating is true early and false after full window`() = runTest {
         seedProfile()
-        // Seed 15 weight entries + 15 food entries (> tdeeWindowDays=14).
-        val startDay = today.minusDays(14)
-        for (i in 0..14) {
+        // Seed 182 weight + food entries (> tdeeWindowDays=180) so the window fills.
+        val startDay = today.minusDays(181)
+        for (i in 0..181) {
             val day = startDay.plusDays(i.toLong())
-            insertWeight(day, 80.0 - i * 0.05)
+            insertWeight(day, 80.0 - i * 0.02)
             insertFood(day, 2200.0)
         }
 
         val series = repo.expenditureSeries()
         // The first point should be calibrating (dataDays < window).
         assertTrue("First point should be calibrating", series.first().calibrating)
-        // The last point (today) should not be calibrating (15 days of data, window=14).
+        // A later point (once ≥180 days of data exist) should not be calibrating.
         assertNotNull(series.find { !it.calibrating })
     }
 

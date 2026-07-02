@@ -50,7 +50,7 @@ data class UserProfile(
     val fatPctOfCalories: Double = 0.25,
     val dayStartHour: Int = 0,
     val smoothingWindowDays: Int = 14,
-    val tdeeWindowDays: Int = 14,
+    val tdeeWindowDays: Int = 180,
     val energyDensityKcalPerKg: Double = 7700.0,
 )
 
@@ -72,11 +72,13 @@ enum class TdeeMethod { FORMULA, BLEND, EMPIRICAL }
 /**
  * A TDEE estimate.
  *
- * @param uncertaintyKcal a standard error in kcal (stable physical unit, not an
- *   abstract score). This is the slot a real posterior SE (e.g. from an EKF)
- *   replaces. Consumers should read only [calibrating] and [valueKcal].
- * @param calibrating true while the engine has fewer than a full window of
- *   paired data days (the intentionally trivial MVP rule).
+ * @param uncertaintyKcal the posterior standard error in kcal from the
+ *   inverse-variance combine of the formula prior and the empirical estimate
+ *   (sqrt(1/(w_f+w_e))). A stable physical unit a future EKF posterior SE can slot into.
+ * @param calibrating true during the initial calibration horizon (fewer than
+ *   ~2 weeks of paired data days) — a UX signal that the estimate is still
+ *   settling, kept deliberately short since inverse-variance shrinkage makes the
+ *   estimate trustworthy well before the 180-day averaging window fills.
  */
 data class TdeeEstimate(
     val valueKcal: Double,

@@ -138,7 +138,7 @@ class EngineTest {
     }
 
     @Test
-    fun `flat weight full window gives tdee equal to mean of complete intake`() {
+    fun `flat weight full window shrinks toward mean of complete intake`() {
         val w = 14
         val start = LocalDate.of(2026, 1, 1)
         val samples = (0..w).map { sample(start.plusDays(it.toLong()), 7, 80.0) }
@@ -146,8 +146,13 @@ class EngineTest {
         val asOf = at(start.plusDays((w + 1).toLong()))
         val engine = DefaultTdeeEngine(samples, intake, profile(smoothing = w, tdeeWindow = w), zone)
         val est = engine.estimateAt(asOf)
+        // Flat weight ⇒ the empirical component == mean complete intake (2500). The engine now
+        // precision-weight-shrinks the Mifflin prior (formula ≈ 2100 at 80 kg) toward it, so the
+        // returned value sits between prior and empirical and leans strongly toward the empirical.
         assertEquals(TdeeMethod.EMPIRICAL, est.method)
-        assertEquals(2500.0, est.valueKcal, 1e-6)
+        val formula = 2100.0 // 10·80 + 6.25·180 − 5·36 + 5 = 1750 RMR × 1.2
+        assertTrue(est.valueKcal > formula && est.valueKcal < 2500.0, "expected shrinkage between prior and empirical (${est.valueKcal})")
+        assertTrue(est.valueKcal > (formula + 2500.0) / 2.0, "should lean toward empirical (${est.valueKcal})")
     }
 
     // ---- Blend boundaries ------------------------------------------------
@@ -189,6 +194,77 @@ class EngineTest {
         val est = engine.estimateAt(asOf)
         assertEquals(TdeeMethod.EMPIRICAL, est.method)
         assertFalse(est.calibrating)
+    }
+
+    // ---- Precision-weighted shrinkage (W=180, anchored-window / actual-span) ----
+
+    /**
+     * A fresh user with ~30 days of paired data produces a genuine BLEND: with W=180 the window
+     * is far from full, so the value shrinks the Mifflin prior partway toward the 30-day empirical
+     * and lands strictly between them (not pure formula, not pure empirical).
+     */
+    @Test
+    fun `thirty days of paired data gives a genuine blend between formula and empirical`() {
+        val start = LocalDate.of(2026, 1, 1)
+        // Flat weight ⇒ empirical component == mean intake (3000), well clear of the formula prior.
+        val samples = (0..30).map { sample(start.plusDays(it.toLong()), 7, 80.0) }
+        val intake = (0..30).map { DailyIntake(start.plusDays(it.toLong()), 3000.0, complete = true) }
+        val asOf = at(start.plusDays(31))
+        val engine = DefaultTdeeEngine(samples, intake, profile(tdeeWindow = 180), zone)
+        val est = engine.estimateAt(asOf)
+
+        val formula = 2100.0 // 10·80 + 6.25·180 − 5·36 + 5 = 1750 RMR × 1.2
+        assertEquals(TdeeMethod.BLEND, est.method)
+        // Past the 14-day calibration horizon, so no longer flagged calibrating even though the
+        // 180-day window is far from full (method stays BLEND).
+        assertFalse(est.calibrating)
+        assertTrue(est.valueKcal > formula && est.valueKcal < 3000.0,
+            "30-day blend must sit strictly between formula prior and empirical (${est.valueKcal})")
+        assertTrue(est.valueKcal > 2500.0, "even at 30 days the fast-earning empirical term should dominate (${est.valueKcal})")
+    }
+
+    /**
+     * With ≥180 days of paired data the window is full: method is EMPIRICAL and the empirical
+     * inverse-variance weight overwhelms the formula prior, so the estimate is ~pure empirical.
+     */
+    @Test
+    fun `full 180-day window yields near-pure empirical`() {
+        val start = LocalDate.of(2026, 1, 1)
+        val samples = (0..200).map { sample(start.plusDays(it.toLong()), 7, 80.0) }
+        val intake = (0..200).map { DailyIntake(start.plusDays(it.toLong()), 3000.0, complete = true) }
+        val asOf = at(start.plusDays(201))
+        val engine = DefaultTdeeEngine(samples, intake, profile(tdeeWindow = 180), zone)
+        val est = engine.estimateAt(asOf)
+
+        val formula = 2100.0
+        assertEquals(TdeeMethod.EMPIRICAL, est.method)
+        assertFalse(est.calibrating)
+        // Empirical weight ≫ formula weight ⇒ value hugs the empirical 3000, far from the 2100 prior.
+        assertTrue(est.valueKcal > 2980.0, "empirical term should dominate at a full window (${est.valueKcal})")
+        assertTrue(3000.0 - est.valueKcal < est.valueKcal - formula,
+            "estimate must be far closer to empirical than to the formula prior (${est.valueKcal})")
+    }
+
+    /**
+     * The posterior SE (uncertaintyKcal) shrinks monotonically as paired data accrues toward a
+     * full W=180 window — from the formula-prior SE (=SE_FORMULA) down as the empirical weight grows.
+     */
+    @Test
+    fun `posterior uncertainty shrinks monotonically as data accrues to a full window`() {
+        val start = LocalDate.of(2026, 1, 1)
+        val samples = (0..200).map { sample(start.plusDays(it.toLong()), 7, 80.0) }
+        val asOf = at(start.plusDays(201))
+
+        var prev = Double.MAX_VALUE
+        for (days in intArrayOf(0, 1, 5, 15, 30, 60, 120, 180, 200)) {
+            val intake = (0 until days).map { DailyIntake(start.plusDays(it.toLong()), 3000.0, complete = true) }
+            val engine = DefaultTdeeEngine(samples, intake, profile(tdeeWindow = 180), zone)
+            val se = engine.estimateAt(asOf).uncertaintyKcal
+            assertTrue(se <= prev + 1e-9, "SE must not increase as data accrues (days=$days: $se > $prev)")
+            prev = se
+        }
+        // Ends well below the 500 kcal formula-prior SE once the window is full.
+        assertTrue(prev < 100.0, "a full window should drive SE well under the 500 kcal prior (was $prev)")
     }
 
     @Test

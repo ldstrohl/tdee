@@ -31,8 +31,8 @@ data class DayWeightPoint(
  * @param intakeKcal that day's logged intake in kcal, or null if the day was not fully logged
  *   (missing/incomplete). Never zero-filled.
  * @param tdeeKcal TDEE estimate in kcal as produced by the engine for that day.
- * @param calibrating true when the engine was still calibrating on that day (fewer than a full
- *   window of paired data days).
+ * @param calibrating true when the engine was still within its initial calibration horizon on that
+ *   day (first ~2 weeks of paired data days).
  */
 data class DayExpenditurePoint(
     val date: LocalDate,

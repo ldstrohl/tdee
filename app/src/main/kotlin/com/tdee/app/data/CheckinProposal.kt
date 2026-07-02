@@ -10,8 +10,8 @@ import com.tdee.domain.Targets
  * [TdeeRepository.commitTargets] with [proposedTargets] (or user-edited values).
  *
  * @property tdeeKcal current TDEE estimate in kcal (the value the proposal is built from).
- * @property calibrating true while the engine has fewer than a full window of paired data days;
- *   the UI surfaces this so an early, low-confidence proposal reads as provisional.
+ * @property calibrating true during the engine's initial calibration horizon (first ~2 weeks of
+ *   paired data days); the UI surfaces this so an early, low-confidence proposal reads as provisional.
  * @property last7AvgIntakeKcal mean kcal over COMPLETE intake days in the trailing 7 log-days
  *   (the in-progress current day excluded), or null when there are no complete days in that window.
  * @property trendChangeLb EMA trend-weight change over the last 7 days in lb

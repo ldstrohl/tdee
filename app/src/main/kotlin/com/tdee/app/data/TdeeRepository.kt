@@ -1049,8 +1049,9 @@ class TdeeRepository(
      * Returns a [WeightProjection] when the user has set a goal weight, or null otherwise.
      *
      * [WeightProjection.goalPace] projects arrival using the profile's [UserProfile.goalRateKgPerWeek].
-     * [WeightProjection.currentPace] projects arrival using the recent EMA slope:
-     *   rate = (EMA_today − EMA_(today − tdeeWindowDays)) / tdeeWindowDays kg/day.
+     * [WeightProjection.currentPace] projects arrival using the recent EMA slope over a short
+     *   lookback (NOT the 180-day empirical TDEE window, which would smear "current" into a
+     *   6-month average):  rate = (EMA_today − EMA_(today − lookback)) / lookback kg/day.
      *
      * A flat or adverse current pace produces [Projection.Unreachable] for [currentPace].
      */
@@ -1078,14 +1079,16 @@ class TdeeRepository(
             zone = zone,
         )
 
-        // Current pace: slope of EMA over the last tdeeWindowDays.
+        // Current pace: slope of the EMA trend over a short recent lookback so it reflects the
+        // latest trend, not the 180-day empirical TDEE averaging window.
+        val paceLookbackDays = 14L
         val today = logDay(now, zone, profile.dayStartHour)
-        val windowStart = today.minusDays(profile.tdeeWindowDays.toLong())
+        val windowStart = today.minusDays(paceLookbackDays)
         val startInstant = windowStart.atStartOfDay(zone).toInstant()
             .plusSeconds(profile.dayStartHour.toLong() * 3600)
         val emaToday = engine.weightTrendAt(now)
         val emaStart = engine.weightTrendAt(startInstant)
-        val currentRateKgPerDay = (emaToday - emaStart) / profile.tdeeWindowDays.toDouble()
+        val currentRateKgPerDay = (emaToday - emaStart) / paceLookbackDays.toDouble()
 
         val currentPace = GoalProjector.projectAtRate(
             trendNowKg = currentTrendKg,

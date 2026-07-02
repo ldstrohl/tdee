@@ -83,6 +83,8 @@ fun UserProfileEntity.toDomain(): UserProfile = UserProfile(
     fatPctOfCalories = fatPctOfCalories,
     dayStartHour = dayStartHour,
     smoothingWindowDays = smoothingWindowDays,
-    tdeeWindowDays = tdeeWindowDays,
-    // energyDensityKcalPerKg intentionally omitted — uses domain default of 7700.0
+    // tdeeWindowDays intentionally omitted — the empirical window is an engine constant
+    // (180 d), not user-configurable data, so use the domain default rather than the
+    // legacy persisted value (the tdeeWindowDays column is now vestigial).
+    // energyDensityKcalPerKg likewise omitted — uses domain default of 7700.0.
 )

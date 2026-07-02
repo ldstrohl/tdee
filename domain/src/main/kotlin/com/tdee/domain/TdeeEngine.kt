@@ -3,6 +3,8 @@ package com.tdee.domain
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.temporal.ChronoUnit
+import kotlin.math.sqrt
 
 /**
  * Time-queryable TDEE/weight-trend engine. This interface is the EKF seam:
@@ -105,96 +107,154 @@ class DefaultTdeeEngine(
     }
 
     /**
-     * Holder for empirical computation, including how many complete paired
-     * data days were available within the window.
+     * Holder for the empirical computation. [tdee] is null when there is no usable
+     * empirical signal (fall back to pure formula). [span] is the ACTUAL number of
+     * days between the two EMA endpoints, [dataDays] the count of paired data days
+     * (defined EMA AND complete intake) in the window — it drives the method label
+     * and [TdeeEstimate.calibrating] — and [intakeDays] the count of complete intake
+     * days averaged, which feeds the empirical standard error.
      */
-    private data class Empirical(val tdee: Double?, val dataDays: Int)
+    private data class Empirical(
+        val tdee: Double?,
+        val span: Int,
+        val dataDays: Int,
+        val intakeDays: Int,
+    )
 
     /**
-     * Empirical TDEE over the trailing W-day window ending the day BEFORE
-     * [asOf]'s log-day (the in-progress current day is excluded).
+     * Empirical TDEE over the trailing window ending the day BEFORE [asOf]'s log-day
+     * (the in-progress current day is excluded).
      *
-     * Window edge choice (documented judgment call): the window covers the W
-     * log-days [windowStart .. windowEnd] inclusive where windowEnd = the day
-     * before logDay(asOf) and windowStart = windowEnd - (W-1). avg_intake is the
-     * mean over COMPLETE intake days falling in that inclusive range. The trend
-     * delta uses EMA(windowEnd) - EMA(windowStart) when both are defined.
+     * Anchored-window / actual-span form (the fix that makes a long W usable from
+     * day ~2): windowEnd = the day before logDay(asOf); the naive start is
+     * windowEnd-(W-1), but the window START is anchored forward to the first
+     * aggregated weigh-in day so an empirical signal exists as soon as there are two
+     * EMA endpoints. [span] is the true day-count between those endpoints, and the
+     * trend delta is divided by [span] (not a fixed W). avg_intake is the mean over
+     * COMPLETE intake days in [windowStart .. windowEnd].
      *
-     * dataDays = count of days in the window that have BOTH a defined EMA value
-     * and a complete intake entry — the paired-data measure that drives the blend.
+     * dataDays = count of days in the window with BOTH a defined EMA value and a
+     * complete intake entry — the paired-data measure that classifies the estimate.
      */
     private fun empirical(asOf: Instant): Empirical {
         val w = profile.tdeeWindowDays
         val today = logDay(asOf)
         val windowEnd = today.minusDays(1)
-        val windowStart = windowEnd.minusDays((w - 1).toLong())
+
+        val daily = aggregatedDailyWeights()
+        if (daily.isEmpty()) return Empirical(null, 0, 0, 0)
+        val firstWeightDay = daily.keys.min()
+
+        // Anchor the start to the first weigh-in so the empirical term exists early.
+        val naiveStart = windowEnd.minusDays((w - 1).toLong())
+        val windowStart = if (naiveStart.isBefore(firstWeightDay)) firstWeightDay else naiveStart
+        if (windowEnd.isBefore(windowStart)) return Empirical(null, 0, 0, 0)
+        val span = ChronoUnit.DAYS.between(windowStart, windowEnd).toInt()
+        if (span < 1) return Empirical(null, 0, 0, 0)
 
         val series = emaSeries(windowEnd)
-        val intakeByDay = intake.associateBy { it.date }
-
-        // Paired data days: defined EMA AND complete intake, within the window.
-        var dataDays = 0
-        var day = windowStart
-        while (!day.isAfter(windowEnd)) {
-            val hasEma = series.containsKey(day)
-            val hasIntake = intakeByDay[day]?.complete == true
-            if (hasEma && hasIntake) dataDays++
-            day = day.plusDays(1)
-        }
-        if (dataDays == 0) return Empirical(null, 0)
-
-        // avg_intake over complete days in the window.
-        val completeKcals = intake.filter {
-            it.complete && !it.date.isBefore(windowStart) && !it.date.isAfter(windowEnd)
-        }.map { it.kcal }
-        if (completeKcals.isEmpty()) return Empirical(null, dataDays)
-        val avgIntake = completeKcals.average()
-
         val emaEnd = series[windowEnd]
         val emaStart = series[windowStart]
-        if (emaEnd == null || emaStart == null) return Empirical(null, dataDays)
+        if (emaEnd == null || emaStart == null) return Empirical(null, span, 0, 0)
 
-        val trendDeltaKg = emaEnd - emaStart
-        val storedKcalPerDay = trendDeltaKg * profile.energyDensityKcalPerKg / w
-        val tdee = avgIntake - storedKcalPerDay
-        return Empirical(tdee, dataDays)
+        val intakeByDay = intake.associateBy { it.date }
+        var dataDays = 0
+        val completeKcals = ArrayList<Double>()
+        var day = windowStart
+        while (!day.isAfter(windowEnd)) {
+            val di = intakeByDay[day]
+            if (di != null && di.complete) {
+                completeKcals.add(di.kcal)
+                if (series.containsKey(day)) dataDays++
+            }
+            day = day.plusDays(1)
+        }
+        if (completeKcals.isEmpty()) return Empirical(null, span, dataDays, 0)
+
+        val avgIntake = completeKcals.average()
+        val storedKcalPerDay = (emaEnd - emaStart) * profile.energyDensityKcalPerKg / span
+        return Empirical(avgIntake - storedKcalPerDay, span, dataDays, completeKcals.size)
     }
 
     override fun estimateAt(asOf: Instant): TdeeEstimate {
         val w = profile.tdeeWindowDays
         val formula = formulaTdee(asOf)
         val emp = empirical(asOf)
-        val dataDays = emp.dataDays
         val empiricalTdee = emp.tdee
 
-        val (value, method) = when {
-            dataDays == 0 || empiricalTdee == null -> formula to TdeeMethod.FORMULA
-            dataDays >= w -> empiricalTdee to TdeeMethod.EMPIRICAL
-            else -> {
-                val weight = dataDays.toDouble() / w
-                ((1 - weight) * formula + weight * empiricalTdee) to TdeeMethod.BLEND
-            }
+        // Precision-weighted (inverse-variance) shrinkage of the Mifflin prior toward
+        // the empirical estimate: est = (w_f·formula + w_e·emp)/(w_f+w_e), w = 1/SE².
+        // The posterior SE is sqrt(1/(w_f+w_e)). With no empirical signal this reduces
+        // to the pure formula prior (posterior SE = SE_FORMULA).
+        val wF = 1.0 / (SE_FORMULA * SE_FORMULA)
+        if (empiricalTdee == null) {
+            return TdeeEstimate(
+                valueKcal = formula,
+                method = TdeeMethod.FORMULA,
+                uncertaintyKcal = sqrt(1.0 / wF),
+                calibrating = true,
+            )
         }
+
+        val seEmp = seEmpirical(emp.span, emp.intakeDays)
+        val wE = 1.0 / (seEmp * seEmp)
+        val value = (wF * formula + wE * empiricalTdee) / (wF + wE)
 
         return TdeeEstimate(
             valueKcal = value,
-            method = method,
-            uncertaintyKcal = uncertainty(dataDays, w),
-            calibrating = dataDays < w,
+            method = if (emp.dataDays >= w) TdeeMethod.EMPIRICAL else TdeeMethod.BLEND,
+            uncertaintyKcal = sqrt(1.0 / (wF + wE)),
+            calibrating = emp.dataDays < CALIBRATION_DAYS,
         )
     }
 
     /**
-     * Coarse standard-error proxy (kcal). Linearly interpolates from a base SE
-     * in the formula regime (dataDays = 0) down to a small floor once a full
-     * window is available (dataDays >= W). This is a placeholder shape, NOT a
-     * statistically derived posterior SE; it exists so consumers have a stable
-     * kcal-valued uncertainty slot that a real EKF posterior SE will replace.
+     * Analytic standard error of the empirical estimator (kcal):
+     *   Var = σ_I²/n  +  (ρ/span)² · 2 · Var(EMA),
+     *   Var(EMA) = σ_W² · α/(2−α),  α = 2/(N+1)   (steady-state EMA variance)
+     * The two EMA endpoints ~span days apart are treated as independent (factor 2),
+     * so doubling the span quarters the trend-delta noise — the term that lets the
+     * empirical estimate earn trust quickly as the window fills.
      */
-    private fun uncertainty(dataDays: Int, w: Int): Double {
-        val baseSe = 500.0
-        val floorSe = 75.0
-        val frac = (dataDays.toDouble() / w).coerceIn(0.0, 1.0)
-        return baseSe - (baseSe - floorSe) * frac
+    private fun seEmpirical(span: Int, intakeDays: Int): Double {
+        val alpha = 2.0 / (profile.smoothingWindowDays + 1)
+        val varEma = sigmaW * sigmaW * alpha / (2 - alpha)
+        val rho = profile.energyDensityKcalPerKg
+        val variance = sigmaI * sigmaI / maxOf(intakeDays, 1) +
+            (rho / span) * (rho / span) * 2 * varEma
+        return sqrt(variance)
+    }
+
+    // ---- Measured-noise inputs for the empirical SE (data-driven, no magic numbers) ----
+    // σ_W = scatter of raw daily weigh-ins about their EMA (kg); σ_I = scatter of complete
+    // daily intake (kcal). Both are measured from this user's own data; below MIN_SIGMA_SAMPLES
+    // observations — or when the data is degenerate (flat → zero scatter) — safe defaults apply.
+    private val sigmaW: Double by lazy {
+        val daily = aggregatedDailyWeights()
+        if (daily.size < MIN_SIGMA_SAMPLES) return@lazy SIGMA_W_DEFAULT
+        val series = emaSeries(daily.keys.max())
+        val resid = daily.mapNotNull { (d, kg) -> series[d]?.let { kg - it } }
+        if (resid.isEmpty()) return@lazy SIGMA_W_DEFAULT
+        val rms = sqrt(resid.sumOf { it * it } / resid.size)
+        if (rms > 0.0) rms else SIGMA_W_DEFAULT
+    }
+
+    private val sigmaI: Double by lazy {
+        val kcals = intake.filter { it.complete }.map { it.kcal }
+        if (kcals.size < MIN_SIGMA_SAMPLES) return@lazy SIGMA_I_DEFAULT
+        val mean = kcals.average()
+        val sd = sqrt(kcals.sumOf { (it - mean) * (it - mean) } / kcals.size)
+        if (sd > 0.0) sd else SIGMA_I_DEFAULT
+    }
+
+    private companion object {
+        const val SE_FORMULA = 500.0      // prior standard error on the Mifflin formula (kcal)
+        const val SIGMA_W_DEFAULT = 1.0   // fallback weigh-in scatter about the EMA (kg)
+        const val SIGMA_I_DEFAULT = 500.0 // fallback daily-intake scatter (kcal)
+        const val MIN_SIGMA_SAMPLES = 8   // below this many observations, use the defaults
+        // "Calibrating" UX horizon: paired-data days before the estimate is presented as settled.
+        // Kept independent of the 180-day averaging window — shrinkage makes the estimate
+        // trustworthy within ~2 weeks, so a full-window rule would flag "calibrating" for 6 months.
+        const val CALIBRATION_DAYS = 14
     }
 }
