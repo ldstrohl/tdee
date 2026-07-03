@@ -104,13 +104,14 @@ Use the emulator for visual sign-off of UI work (agents build + run logic tests;
 installs, launches, screenshots, and confirms rendering before committing).
 
 **Physical device (for Health Connect / Withings testing):** WSL2 Linux adb CANNOT see USB devices.
-The phone is reached only through the **Windows adb binary**:
-`/mnt/c/Users/user/AppData/Local/Android/Sdk/platform-tools/adb.exe` (not in PATH — use the full
-path). Current test phone = **Pixel 3, serial `REDACTED`** (Android 12 / API 31; Health Connect is
-an installed app there, fed by Withings). So there are TWO adb worlds: **emulator via WSL adb
-`~/Android/Sdk/platform-tools/adb`**, **phone via `adb.exe -s REDACTED`**. (`adb.exe` also lists the
-emulator but as `unauthorized` — ignore it; use WSL adb for the emulator.) The `~/AudiobookWearOS`
-project's `CLAUDE.md` documents this same WSL/Windows-adb quirk.
+The phone is reached only through the **Windows adb binary** (path is machine-specific — see
+`CLAUDE.local.md`, gitignored, not in PATH — use the full path). So there are TWO adb worlds:
+**emulator via WSL adb `~/Android/Sdk/platform-tools/adb`**, **phone via the Windows `adb.exe -s
+<serial>`** (serial also in `CLAUDE.local.md`). (`adb.exe` also lists the emulator but as
+`unauthorized` — ignore it; use WSL adb for the emulator.) The `~/AudiobookWearOS` project's
+`CLAUDE.md` documents this same WSL/Windows-adb quirk. Historical note: an older Pixel 3 (Android 12)
+test phone used the legacy standalone HC app, which `connect-client 1.1.0` couldn't drive — the
+current test phone (see `CLAUDE.local.md`) is Android 14+ and uses platform HC like the emulator.
 
 ## Status
 Done, committed, tested (263 unit tests green): spec → scaffold → math engine (`:domain`) → Room data
@@ -197,9 +198,10 @@ DRY, no reworked copy; Expand routes to the same `ChartDetailScreen`. All three 
 (awaiting the user's call). *(Note: `reports/` is gitignored — the back-test report is a local artifact.)*
 
 **Health Connect testing (verified path):** HC needs **platform HC (Android 14+ / API 34)** — works on
-the `tdee_phone` emulator. It does NOT work on the Pixel 3 (`REDACTED`, Android 12) — that uses the
+the `tdee_phone` emulator. It did NOT work on the old Pixel 3 test phone (Android 12) — that used the
 *legacy standalone* HC app, which `connect-client 1.1.0` doesn't drive (the permission gateway bounces;
-the app never registers in HC). The user's real device is Android 14+, so production is fine. To verify
+the app never registers in HC). The current test phone (see `CLAUDE.local.md`) is Android 14+, so
+platform HC applies there same as production. To verify
 import on the emulator: Settings → Connect Health Connect → tap through HC "Get started" + grant Weight;
 then the debug-only **"Write sample weights to HC"** button (needs WRITE_WEIGHT — grant via
 `adb -s emulator-5554 shell pm grant com.tdee.app android.permission.health.WRITE_WEIGHT`), then Sync →
