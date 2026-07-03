@@ -84,10 +84,38 @@ class ChartTransformState {
 }
 
 /**
+ * The furthest reachable pace end-date in [projection], or null when the projection isn't
+ * [ProjectionUi.Ready] or neither pace is reachable. This is the date the prediction lines run out to.
+ */
+internal fun furthestReachableDate(projection: ProjectionUi): LocalDate? {
+    val ready = projection as? ProjectionUi.Ready ?: return null
+    return listOfNotNull(
+        (ready.goalPace as? PaceUi.Reachable)?.date,
+        (ready.currentPace as? PaceUi.Reachable)?.date,
+    ).maxOrNull()
+}
+
+/**
+ * The data-max date for the trend chart's x-domain: [lastDataDate], extended to the furthest
+ * reachable prediction date when [predictionOn] and that date lies after the last weigh-in — so the
+ * projection lines have room to reach the goal. Returns [lastDataDate] unchanged otherwise.
+ */
+internal fun extendedDataMax(
+    lastDataDate: LocalDate,
+    projection: ProjectionUi,
+    predictionOn: Boolean,
+): LocalDate {
+    if (!predictionOn) return lastDataDate
+    val furthest = furthestReachableDate(projection) ?: return lastDataDate
+    return if (furthest.isAfter(lastDataDate)) furthest else lastDataDate
+}
+
+/**
  * Full-screen single-chart view (note 13). Fills the screen and adapts to landscape (the manifest
  * imposes no orientation lock), and supports pinch-to-zoom + drag-to-pan (note 12). Reuses the same
- * [InsightsViewModel] data and range pills; the prediction overlay is intentionally omitted here so
- * the zoom window stays bounded to real data.
+ * [InsightsViewModel] data and range pills; for TREND it also exposes the "🔮 Prediction" toggle,
+ * which extends the x-domain out to the projection end-dates so the overlay fits within the zoom
+ * window.
  */
 @Composable
 fun ChartDetailScreen(
@@ -158,6 +186,15 @@ fun ChartDetailScreen(
                 }
             }
 
+            // Prediction toggle on its own row (TREND only), matching the inline panel's look.
+            if (type == ChartType.TREND) {
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    Pill("🔮 Prediction", state.predictionOn) {
+                        viewModel.setPrediction(!state.predictionOn); transform.reset()
+                    }
+                }
+            }
+
             // Chart fills the remaining space (portrait or landscape).
             Box(
                 modifier = Modifier.fillMaxWidth().weight(1f),
@@ -188,11 +225,17 @@ fun ChartDetailScreen(
                         when (type) {
                             ChartType.TREND -> {
                                 val pts = state.visiblePoints
-                                val win = transform.visibleWindow(pts.first().date, pts.last().date)
+                                // Extend the pan/zoom domain out to the projection end-dates when the
+                                // prediction overlay is on, so the lines fit within the window.
+                                val dataMax = extendedDataMax(
+                                    pts.last().date, state.projection, state.predictionOn,
+                                )
+                                val win = transform.visibleWindow(pts.first().date, dataMax)
                                 drawTrendChart(
                                     points = pts,
                                     goalLb = (state.projection as? ProjectionUi.Ready)?.goalLb,
-                                    projection = ProjectionUi.NoGoal,
+                                    projection = if (state.predictionOn) state.projection
+                                        else ProjectionUi.NoGoal,
                                     colors = chartColors,
                                     textMeasurer = textMeasurer,
                                     xDomain = win,
