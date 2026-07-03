@@ -1,4 +1,4 @@
-import math, random, datetime
+import math, random, datetime, os
 random.seed(11)
 N=365
 today=datetime.date(2026,6,22)
@@ -233,5 +233,5 @@ showTrend(); sel('exp','3mo'); sel('donut','today');
 document.querySelectorAll('.pills[data-g="trend"] .pill').forEach(p=>p.classList.toggle('active',p.dataset.v==='3mo'));
 </script>
 </body></html>"""
-open("/home/ldstrohl/tdee/design/charts.html","w").write(html)
+open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "charts.html"), "w").write(html)
 print("v3 written",len(html),"bytes; prediction is now an independent overlay keeping the range")

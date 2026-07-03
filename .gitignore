@@ -22,3 +22,9 @@ local.properties
 
 # Local analysis/report artifacts (generated, not source)
 /reports/
+
+# Local-only input notes / scratch data (never publish)
+/sample/
+/test_notes/
+/USER_TESTING.md
+/PUBLIC_SANITIZE.md
