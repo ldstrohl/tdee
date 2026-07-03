@@ -9,8 +9,9 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 
 /**
- * Back-test of [DefaultTdeeEngine] against a real 18-month log (559 contiguous days,
- * `TDEESampleData.csv`: daily calories, weigh-ins on ~27 % of days, ~209→~187 lb).
+ * Back-test of [DefaultTdeeEngine] against a synthetic 18-month log (559 contiguous days,
+ * `TDEESampleData.csv`: daily calories, weigh-ins on ~27 % of days, ~200→~176 lb). The fixture is
+ * generated (energy-balance-consistent), not real personal data.
  *
  * The engine's empirical TDEE is, by construction, `avgIntake − Δema·density/W` over a trailing
  * window — so over the WHOLE period it should reconcile with a hand-computed energy balance
