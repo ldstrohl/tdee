@@ -4,6 +4,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
+import kotlin.math.pow
 import kotlin.math.sqrt
 
 /**
@@ -57,8 +58,17 @@ class DefaultTdeeEngine(
 
     /**
      * Build the dense daily EMA series from the first aggregated weight day
-     * through [endDay] (inclusive). On days without a measurement the EMA is
-     * carried forward (EMA_today = EMA_prev). Seed = first day's weight.
+     * through [endDay] (inclusive). Seed = first day's weight.
+     *
+     * Gap-aware update: the smoothing constant α = 2/(N+1) is a *per-day* rate,
+     * but weigh-ins are irregular. On a weigh-in that lands [dtDays] days after
+     * the previous weigh-in we apply the compounded coefficient
+     *   αEff = 1 − (1 − α)^dtDays
+     * once, so the EMA's group delay is (N−1)/2 *days* rather than *samples*.
+     * (A gap of dtDays is equivalent to dtDays daily carry-forwards followed by a
+     * single α update on a hypothetical unchanged reading, collapsed into one step.)
+     * For a daily logger dtDays = 1 and αEff = α — identical to the old behavior.
+     * Non-weigh-in days still carry the value forward, so the returned map is dense.
      *
      * Returns an empty map if there are no samples or [endDay] precedes the
      * first measured day.
@@ -73,10 +83,16 @@ class DefaultTdeeEngine(
         val series = LinkedHashMap<LocalDate, Double>()
         var ema = daily.getValue(firstDay)
         series[firstDay] = ema
+        var lastWeighDay = firstDay
         var day = firstDay.plusDays(1)
         while (!day.isAfter(endDay)) {
             val w = daily[day]
-            ema = if (w != null) alpha * w + (1 - alpha) * ema else ema
+            if (w != null) {
+                val dtDays = ChronoUnit.DAYS.between(lastWeighDay, day).toDouble()
+                val alphaEff = 1 - (1 - alpha).pow(dtDays)
+                ema = alphaEff * w + (1 - alphaEff) * ema
+                lastWeighDay = day
+            }
             series[day] = ema
             day = day.plusDays(1)
         }
@@ -215,6 +231,10 @@ class DefaultTdeeEngine(
      * The two EMA endpoints ~span days apart are treated as independent (factor 2),
      * so doubling the span quarters the trend-delta noise — the term that lets the
      * empirical estimate earn trust quickly as the window fills.
+     *
+     * Note: Var(EMA) here uses the dense-sampling α. Under gap-aware updates
+     * (sparse logging) the effective per-update coefficient is larger, so the
+     * true steady-state EMA variance is higher and this term is a lower bound.
      */
     private fun seEmpirical(span: Int, intakeDays: Int): Double {
         val alpha = 2.0 / (profile.smoothingWindowDays + 1)
