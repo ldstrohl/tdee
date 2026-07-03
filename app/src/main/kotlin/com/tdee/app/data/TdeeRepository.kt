@@ -3,6 +3,7 @@ package com.tdee.app.data
 import com.tdee.domain.DailyIntake
 import com.tdee.domain.DefaultTdeeEngine
 import com.tdee.domain.GoalProjector
+import com.tdee.domain.PaceEstimator
 import com.tdee.domain.Projection
 import com.tdee.domain.TargetCalculator
 import com.tdee.domain.Targets
@@ -1152,11 +1153,42 @@ class TdeeRepository(
             zone = zone,
         )
 
+        // Expected pace: λ-blend of the responsive recent rate (above) and a stable long-run rate
+        // measured over ~90 days (or the whole log if younger), per PaceEstimator. The long-run
+        // window is anchored to the first weigh-in day, and its actual span is passed to
+        // expectedPace() so a young log (< MIN_LONGRUN_SPAN_DAYS) degenerates to the recent rate.
+        val firstWeighInDay = samples.minOfOrNull { logDay(it.t, zone, profile.dayStartHour) }
+        val longRunSpan = if (firstWeighInDay == null) 0L
+            else minOf(
+                PaceEstimator.LONGRUN_LOOKBACK_DAYS,
+                java.time.temporal.ChronoUnit.DAYS.between(firstWeighInDay, today),
+            )
+        val longRunRateKgPerDay = if (longRunSpan >= 1L) {
+            val lrStart = today.minusDays(longRunSpan)
+            val lrStartInstant = lrStart.atStartOfDay(zone).toInstant()
+                .plusSeconds(profile.dayStartHour.toLong() * 3600)
+            (emaToday - engine.weightTrendAt(lrStartInstant)) / longRunSpan.toDouble()
+        } else currentRateKgPerDay
+        val expectedRateKgPerDay = PaceEstimator.expectedPace(
+            recent = currentRateKgPerDay,
+            longRun = longRunRateKgPerDay,
+            longRunSpanDays = longRunSpan,
+        )
+        val expectedPace = GoalProjector.projectAtRate(
+            trendNowKg = currentTrendKg,
+            goalKg = goalKg,
+            rateKgPerDay = expectedRateKgPerDay,
+            asOf = now,
+            zone = zone,
+        )
+
         WeightProjection(
             currentTrendKg = currentTrendKg,
             goalKg = goalKg,
             goalPace = goalPace,
             currentPace = currentPace,
+            expectedPace = expectedPace,
+            expectedRateKgPerDay = expectedRateKgPerDay,
         )
     }
 

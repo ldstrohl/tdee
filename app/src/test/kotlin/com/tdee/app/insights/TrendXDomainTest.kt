@@ -15,12 +15,19 @@ class TrendXDomainTest {
     private val lastData = LocalDate.of(2026, 7, 3)
     private val goalDate = LocalDate.of(2026, 9, 1)
     private val currentDate = LocalDate.of(2026, 10, 15)
+    private val expectedDate = LocalDate.of(2026, 11, 20)
 
-    private fun ready(goalPace: PaceUi, currentPace: PaceUi) = ProjectionUi.Ready(
+    private fun ready(
+        goalPace: PaceUi,
+        currentPace: PaceUi,
+        expectedPace: PaceUi = PaceUi.Unreachable("n/a"),
+    ) = ProjectionUi.Ready(
         goalLb = 170.0,
         currentTrendLb = 180.0,
         goalPace = goalPace,
         currentPace = currentPace,
+        expectedPace = expectedPace,
+        expectedRateLbPerDay = -0.1,
     )
 
     private fun reachable(date: LocalDate) = PaceUi.Reachable(date, rateLbPerDay = -0.1)
@@ -29,6 +36,12 @@ class TrendXDomainTest {
     fun `furthest reachable date is the max of the two reachable paces`() {
         val p = ready(reachable(goalDate), reachable(currentDate))
         assertEquals(currentDate, furthestReachableDate(p))
+    }
+
+    @Test
+    fun `furthest reachable date includes the expected pace`() {
+        val p = ready(reachable(goalDate), reachable(currentDate), reachable(expectedDate))
+        assertEquals(expectedDate, furthestReachableDate(p))
     }
 
     @Test

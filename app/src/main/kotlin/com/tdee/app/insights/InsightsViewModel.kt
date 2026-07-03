@@ -43,6 +43,9 @@ sealed interface ProjectionUi {
         val currentTrendLb: Double,
         val goalPace: PaceUi,
         val currentPace: PaceUi,
+        val expectedPace: PaceUi,
+        /** λ-blended expected rate in lb/day; drives the P90 cone geometry at draw time. */
+        val expectedRateLbPerDay: Double,
     ) : ProjectionUi
 
     data object NoGoal : ProjectionUi
@@ -263,6 +266,8 @@ internal fun buildProjectionUi(wp: WeightProjection?): ProjectionUi {
         currentTrendLb = wp.currentTrendKg * KG_TO_LB,
         goalPace = wp.goalPace.toPaceUi(),
         currentPace = wp.currentPace.toPaceUi(),
+        expectedPace = wp.expectedPace.toPaceUi(),
+        expectedRateLbPerDay = wp.expectedRateKgPerDay * KG_TO_LB,
     )
 }
 

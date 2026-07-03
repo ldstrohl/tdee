@@ -451,4 +451,46 @@ class TdeeRepositoryChartTest {
         val result = repo.weightProjection()!!
         assertTrue(result.currentTrendKg.isFinite())
     }
+
+    @Test
+    fun `weightProjection expectedPace is Reachable when EMA trends toward goal`() = runTest {
+        seedProfile(goalWeightKg = 75.0)
+        for (i in 0..15) {
+            insertWeight(today.minusDays((15 - i).toLong()), 82.0 - i * 0.1)
+        }
+
+        val result = repo.weightProjection()!!
+        assertTrue(
+            "expectedPace should be Reachable with downward trend toward lower goal, got ${result.expectedPace}",
+            result.expectedPace is Projection.Reachable,
+        )
+    }
+
+    @Test
+    fun `weightProjection expected rate equals recent rate on a young log (span under 28 days)`() = runTest {
+        // Log spans only 15 days (< MIN_LONGRUN_SPAN_DAYS), so expectedPace degenerates to the
+        // recent 14-day rate — i.e. the same rate as currentPace.
+        seedProfile(goalWeightKg = 75.0)
+        for (i in 0..15) {
+            insertWeight(today.minusDays((15 - i).toLong()), 82.0 - i * 0.1)
+        }
+
+        val result = repo.weightProjection()!!
+        val currentRate = (result.currentPace as Projection.Reachable).rateKgPerDay
+        assertEquals(currentRate, result.expectedRateKgPerDay, 1e-9)
+    }
+
+    @Test
+    fun `weightProjection expectedPace is Unreachable when EMA is flat`() = runTest {
+        seedProfile(goalWeightKg = 75.0)
+        for (i in 15 downTo 0) {
+            insertWeight(today.minusDays(i.toLong()), 80.0) // completely flat
+        }
+
+        val result = repo.weightProjection()!!
+        assertTrue(
+            "expectedPace should be Unreachable with flat EMA, got ${result.expectedPace}",
+            result.expectedPace is Projection.Unreachable,
+        )
+    }
 }
