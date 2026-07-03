@@ -19,6 +19,7 @@ import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.temporal.ChronoUnit
 import java.util.UUID
 import kotlin.random.Random
 
@@ -150,6 +151,20 @@ class TdeeRepository(
             ?: throw IllegalStateException("No user profile")
         val today = logDay(clock.instant(), zone, profileEntity.dayStartHour)
         !latest.startDate.isAfter(today.minusDays(7))
+    }
+
+    /**
+     * Days between today's log-day and the log-day of the most recent weight entry, or null if the
+     * user has no weight entries yet. Drives the "weigh-in reminder" dashboard nudge.
+     */
+    suspend fun daysSinceLastWeighIn(): Long? = withContext(Dispatchers.IO) {
+        val uid = currentUser.userId()
+        val latestTimestamp = weightDao.getLatestTimestamp(uid) ?: return@withContext null
+        val profileEntity = profileDao.get(uid)
+            ?: throw IllegalStateException("No user profile")
+        val today = logDay(clock.instant(), zone, profileEntity.dayStartHour)
+        val lastWeighInDay = logDay(latestTimestamp, zone, profileEntity.dayStartHour)
+        ChronoUnit.DAYS.between(lastWeighInDay, today)
     }
 
     /**

@@ -69,6 +69,8 @@ sealed interface DashboardUiState {
         val consumedTotals: ConsumedTotals,
         /** True when a weekly check-in is due (no period yet, or latest ≥ 7 days old). */
         val checkinDue: Boolean,
+        /** Days since the most recent weigh-in, or null if the user has no weight entries yet. */
+        val daysSinceLastWeighIn: Long?,
     ) : DashboardUiState
 }
 
@@ -120,6 +122,7 @@ class DashboardViewModel(
                 macroTargets = base.macroTargets,
                 consumedTotals = consumed,
                 checkinDue = base.checkinDue,
+                daysSinceLastWeighIn = base.daysSinceLastWeighIn,
             )
         }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, DashboardUiState.Loading)
@@ -177,11 +180,13 @@ class DashboardViewModel(
                 val trendKgDeferred = async { repo.currentTrendKg() }
                 val targetsDeferred = async { repo.activeTargets() }
                 val checkinDueDeferred = async { repo.checkinDue() }
+                val daysSinceLastWeighInDeferred = async { repo.daysSinceLastWeighIn() }
 
                 val estimate = estimateDeferred.await()
                 val trendKg = trendKgDeferred.await()
                 val targets = targetsDeferred.await()
                 val checkinDue = checkinDueDeferred.await()
+                val daysSinceLastWeighIn = daysSinceLastWeighInDeferred.await()
 
                 _loadedBase.value = LoadedBase(
                     tdeeKcal = estimate.valueKcal.toInt(),
@@ -191,6 +196,7 @@ class DashboardViewModel(
                     calorieTargetKcal = targets.calorieTargetKcal.toInt(),
                     macroTargets = targets,
                     checkinDue = checkinDue,
+                    daysSinceLastWeighIn = daysSinceLastWeighIn,
                 )
             } catch (e: Exception) {
                 // Stay in Loading on error — safety net for race conditions only.
@@ -226,6 +232,7 @@ private data class LoadedBase(
     val calorieTargetKcal: Int,
     val macroTargets: Targets,
     val checkinDue: Boolean,
+    val daysSinceLastWeighIn: Long?,
 )
 
 private fun List<FoodEntryEntity>.toConsumedTotals() = ConsumedTotals(

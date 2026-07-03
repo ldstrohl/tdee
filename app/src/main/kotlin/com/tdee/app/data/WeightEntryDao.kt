@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import java.time.Instant
 
 @Dao
 interface WeightEntryDao {
@@ -11,6 +12,10 @@ interface WeightEntryDao {
     /** Insert, replacing on id conflict. */
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(entry: WeightEntryEntity): Long
+
+    /** Timestamp of the most recent weight entry for [userId], or null if none exist. */
+    @Query("SELECT MAX(timestamp) FROM weight_entry WHERE userId = :userId")
+    suspend fun getLatestTimestamp(userId: String): Instant?
 
     /**
      * Insert ignoring duplicates by (userId, healthConnectUid) composite index.
