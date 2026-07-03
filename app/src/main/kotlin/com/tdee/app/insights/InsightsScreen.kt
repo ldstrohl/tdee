@@ -549,18 +549,13 @@ internal fun DrawScope.drawTrendChart(
     val scale = w / 880f
 
     // X domain — an explicit [xDomain] (from pinch/pan in the full-screen view) overrides the
-    // data-derived span and suppresses the prediction overlay so the zoom math stays simple.
+    // data-derived span. The prediction overlay renders in both cases; the full-screen caller
+    // extends its xDomain out to the projection end-dates so the lines fit within the window.
     val historyDates = points.map { it.date }
-    val projReady = if (xDomain == null) projection as? ProjectionUi.Ready else null
-    val furthestPredDate: LocalDate? = projReady?.let {
-        listOfNotNull(
-            (it.goalPace as? PaceUi.Reachable)?.date,
-            (it.currentPace as? PaceUi.Reachable)?.date,
-        ).maxOrNull()
-    }
+    val projReady = projection as? ProjectionUi.Ready
     val tMin: LocalDate = xDomain?.first ?: historyDates.first()
     val tMax: LocalDate = xDomain?.second
-        ?: furthestPredDate?.takeIf { it.isAfter(historyDates.last()) }
+        ?: furthestReachableDate(projection)?.takeIf { it.isAfter(historyDates.last()) }
         ?: historyDates.last()
 
     val totalDays = ChronoUnit.DAYS.between(tMin, tMax).toFloat().coerceAtLeast(1f)
@@ -578,6 +573,12 @@ internal fun DrawScope.drawTrendChart(
         addAll(yPoints.mapNotNull { it.rawLb })
         addAll(yPoints.map { it.emaLb })
         goalLb?.let { add(it) }
+        // The prediction lines run from the last EMA value to the goal; include both endpoints so a
+        // window zoomed into the future (with no history points) still fits the lines on-scale.
+        if (projReady != null) {
+            add(points.last().emaLb)
+            goalLb?.let { add(it) }
+        }
     }
     val vMin = (allYVals.minOrNull() ?: 100.0) - 2.0
     val vMax = (allYVals.maxOrNull() ?: 200.0) + 2.0
@@ -649,43 +650,33 @@ internal fun DrawScope.drawTrendChart(
         val nowX = xOf(last.date)
         val nowY = yOf(last.emaLb)
         val goalY = if (goalLb != null) yOf(goalLb) else nowY
+        // An x within the visible plot rect. Labels/divider text anchored well outside it are
+        // skipped (e.g. when zoomed into a window that excludes the "now" line or an end-dot).
+        fun xVisible(x: Float) = x >= ml && x <= w - mr
 
-        // "now" vertical divider
-        drawLine(
-            color = Color(0xFFCFC8DB),
-            start = Offset(nowX, mt),
-            end = Offset(nowX, mt + ph),
-            strokeWidth = 1f,
-            pathEffect = DASH_3_3,
-        )
-        val nowM = textMeasurer.measure("now", TextStyle(fontSize = 9.sp, color = Color(0xFF8A7FB0)))
-        drawText(nowM, topLeft = Offset(nowX - nowM.size.width / 2f, mt + 2f))
-
-        // Goal pace line
-        val gPace = projReady.goalPace
-        if (gPace is PaceUi.Reachable) {
-            val endX = xOf(gPace.date)
+        // Shapes (divider + pace lines + end-dots) are clipped to the plot rect so a zoomed/panned
+        // window never bleeds into the gutters or axes; labels are drawn unclipped below.
+        clipRect(left = ml, top = mt, right = w - mr, bottom = mt + ph) {
+            // "now" vertical divider
             drawLine(
-                color = colors.projectionGoal,
-                start = Offset(nowX, nowY),
-                end = Offset(endX, goalY),
-                strokeWidth = 2.4f * scale,
-                pathEffect = DASH_7_5,
+                color = Color(0xFFCFC8DB),
+                start = Offset(nowX, mt),
+                end = Offset(nowX, mt + ph),
+                strokeWidth = 1f,
+                pathEffect = DASH_3_3,
             )
-            drawCircle(color = colors.projectionGoal, radius = 4f * scale, center = Offset(endX, goalY))
-            val gLbl = "goal pace: ${gPace.date.format(DATE_FMT_LONG)}"
-            val gM = textMeasurer.measure(
-                gLbl,
-                TextStyle(fontSize = 10.sp, color = colors.projectionGoal, fontWeight = FontWeight.SemiBold),
-            )
-            // Label above the end-dot, clamped to stay within the canvas width
-            drawText(gM, topLeft = Offset((endX - gM.size.width / 2f).coerceIn(2f, w - gM.size.width - 2f), goalY - gM.size.height - 10f))
-        }
-
-        // Current pace line
-        val cPace = projReady.currentPace
-        when (cPace) {
-            is PaceUi.Reachable -> {
+            (projReady.goalPace as? PaceUi.Reachable)?.let { gPace ->
+                val endX = xOf(gPace.date)
+                drawLine(
+                    color = colors.projectionGoal,
+                    start = Offset(nowX, nowY),
+                    end = Offset(endX, goalY),
+                    strokeWidth = 2.4f * scale,
+                    pathEffect = DASH_7_5,
+                )
+                drawCircle(color = colors.projectionGoal, radius = 4f * scale, center = Offset(endX, goalY))
+            }
+            (projReady.currentPace as? PaceUi.Reachable)?.let { cPace ->
                 val endX = xOf(cPace.date)
                 drawLine(
                     color = colors.projectionCurrent,
@@ -695,22 +686,52 @@ internal fun DrawScope.drawTrendChart(
                     pathEffect = DASH_7_5,
                 )
                 drawCircle(color = colors.projectionCurrent, radius = 4f * scale, center = Offset(endX, goalY))
-                val cLbl = "current pace: ${cPace.date.format(DATE_FMT_LONG)}"
-                val cM = textMeasurer.measure(
-                    cLbl,
-                    TextStyle(fontSize = 10.sp, color = colors.projectionCurrent, fontWeight = FontWeight.SemiBold),
+            }
+        }
+
+        // "now" label
+        if (xVisible(nowX)) {
+            val nowM = textMeasurer.measure("now", TextStyle(fontSize = 9.sp, color = Color(0xFF8A7FB0)))
+            drawText(nowM, topLeft = Offset(nowX - nowM.size.width / 2f, mt + 2f))
+        }
+
+        // Goal pace label (above the end-dot, clamped to the canvas width)
+        val gPace = projReady.goalPace
+        if (gPace is PaceUi.Reachable) {
+            val endX = xOf(gPace.date)
+            if (xVisible(endX)) {
+                val gLbl = "goal pace: ${gPace.date.format(DATE_FMT_LONG)}"
+                val gM = textMeasurer.measure(
+                    gLbl,
+                    TextStyle(fontSize = 10.sp, color = colors.projectionGoal, fontWeight = FontWeight.SemiBold),
                 )
-                // Label below the end-dot, clamped to stay within the canvas width
-                drawText(cM, topLeft = Offset((endX - cM.size.width / 2f).coerceIn(2f, w - cM.size.width - 2f), goalY + 16f))
+                drawText(gM, topLeft = Offset((endX - gM.size.width / 2f).coerceIn(2f, w - gM.size.width - 2f), goalY - gM.size.height - 10f))
+            }
+        }
+
+        // Current pace label (below the end-dot) or "not on track" note
+        when (val cPace = projReady.currentPace) {
+            is PaceUi.Reachable -> {
+                val endX = xOf(cPace.date)
+                if (xVisible(endX)) {
+                    val cLbl = "current pace: ${cPace.date.format(DATE_FMT_LONG)}"
+                    val cM = textMeasurer.measure(
+                        cLbl,
+                        TextStyle(fontSize = 10.sp, color = colors.projectionCurrent, fontWeight = FontWeight.SemiBold),
+                    )
+                    drawText(cM, topLeft = Offset((endX - cM.size.width / 2f).coerceIn(2f, w - cM.size.width - 2f), goalY + 16f))
+                }
             }
 
             is PaceUi.Unreachable -> {
                 // Show "not on track" note near the bottom of the "now" line
-                val noteM = textMeasurer.measure(
-                    "current pace: not on track",
-                    TextStyle(fontSize = 9.sp, color = colors.projectionCurrent),
-                )
-                drawText(noteM, topLeft = Offset(nowX + 4f, mt + ph - noteM.size.height - 4f))
+                if (xVisible(nowX)) {
+                    val noteM = textMeasurer.measure(
+                        "current pace: not on track",
+                        TextStyle(fontSize = 9.sp, color = colors.projectionCurrent),
+                    )
+                    drawText(noteM, topLeft = Offset(nowX + 4f, mt + ph - noteM.size.height - 4f))
+                }
             }
         }
     }
