@@ -461,6 +461,8 @@ class InsightsViewModelTest {
                 rateKgPerDay = -0.036,
             ),
             currentPace = Projection.Unreachable("flat"),
+            expectedPace = Projection.Unreachable("flat"),
+            expectedRateKgPerDay = 0.0,
         )
         val result = buildProjectionUi(wp) as ProjectionUi.Ready
         assertEquals(75.0 * KG_TO_LB, result.goalLb, 0.0001)
@@ -475,11 +477,17 @@ class InsightsViewModelTest {
             goalKg = 75.0,
             goalPace = Projection.Reachable(predictedDate, rateKgPerDay = -0.036),
             currentPace = Projection.Unreachable("flat"),
+            expectedPace = Projection.Reachable(predictedDate, rateKgPerDay = -0.030),
+            expectedRateKgPerDay = -0.030,
         )
         val result = buildProjectionUi(wp) as ProjectionUi.Ready
         val pace = result.goalPace as PaceUi.Reachable
         assertEquals(predictedDate, pace.date)
         assertEquals(-0.036 * KG_TO_LB, pace.rateLbPerDay, 0.0001)
+        val expected = result.expectedPace as PaceUi.Reachable
+        assertEquals(predictedDate, expected.date)
+        assertEquals(-0.030 * KG_TO_LB, expected.rateLbPerDay, 0.0001)
+        assertEquals(-0.030 * KG_TO_LB, result.expectedRateLbPerDay, 0.0001)
     }
 
     @Test
@@ -489,6 +497,8 @@ class InsightsViewModelTest {
             goalKg = 75.0,
             goalPace = Projection.Unreachable("going wrong direction"),
             currentPace = Projection.Unreachable("flat"),
+            expectedPace = Projection.Unreachable("flat"),
+            expectedRateKgPerDay = 0.0,
         )
         val result = buildProjectionUi(wp) as ProjectionUi.Ready
         val pace = result.goalPace as PaceUi.Unreachable

@@ -50,6 +50,9 @@ import com.tdee.app.data.DayExpenditurePoint
 import com.tdee.app.data.MacroSummary
 import com.tdee.app.ui.theme.ChartColors
 import com.tdee.app.ui.theme.LocalChartColors
+import com.tdee.domain.PaceEstimator
+import kotlin.math.abs
+import kotlin.math.roundToLong
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
@@ -514,6 +517,14 @@ private val DASH_7_5 = PathEffect.dashPathEffect(floatArrayOf(7f, 5f))
 private val DASH_3_3 = PathEffect.dashPathEffect(floatArrayOf(3f, 3f))
 
 /**
+ * Max horizon (days past "now") the P90 cone is drawn to. 28 d is the primary calibration point of
+ * [PaceEstimator.CONE_P90_KG_PER_DAY] (P90 ≈ 5.9 lb at +28 d on the back-test); beyond a month the
+ * band exceeds typical chart scale and stops being readable — the end-label's ± figure carries the
+ * long-horizon uncertainty instead.
+ */
+private const val CONE_MAX_HORIZON_DAYS = 28L
+
+/**
  * Draws the trend chart on the current Canvas.
  *
  * Geometry mirrors trend_chart() in design/charts_gen.py:
@@ -657,6 +668,30 @@ internal fun DrawScope.drawTrendChart(
         // Shapes (divider + pace lines + end-dots) are clipped to the plot rect so a zoomed/panned
         // window never bleeds into the gutters or axes; labels are drawn unclipped below.
         clipRect(left = ml, top = mt, right = w - mr, bottom = mt + ph) {
+            // P90 cone (under everything else): a translucent wedge from the "now" apex opening
+            // rightward. Center line = trendNowLb + expectedRateLbPerDay·h; the linearly-growing
+            // half-width means both edges are straight, so the wedge is an exact triangle whose apex
+            // (h=0, half-width=0) sits on the expected line's start. Drawn to the earliest of the
+            // expected end date, "now" + CONE_MAX_HORIZON_DAYS, and the visible right edge (tMax);
+            // past the horizon cap the wedge ends with a flat vertical edge mid-chart.
+            (projReady.expectedPace as? PaceUi.Reachable)?.let { ePace ->
+                val trendNowLb = last.emaLb
+                val coneEndDate = minOf(ePace.date, last.date.plusDays(CONE_MAX_HORIZON_DAYS), tMax)
+                val hEnd = ChronoUnit.DAYS.between(last.date, coneEndDate)
+                if (hEnd > 0) {
+                    val coneEndX = xOf(coneEndDate)
+                    val centerEndLb = trendNowLb + projReady.expectedRateLbPerDay * hEnd
+                    val halfEndLb = PaceEstimator.coneHalfWidthKg(hEnd) * KG_TO_LB
+                    val cone = Path().apply {
+                        moveTo(nowX, nowY)
+                        lineTo(coneEndX, yOf(centerEndLb + halfEndLb))
+                        lineTo(coneEndX, yOf(centerEndLb - halfEndLb))
+                        close()
+                    }
+                    drawPath(cone, color = colors.projectionExpected.copy(alpha = colors.projectionConeAlpha))
+                }
+            }
+
             // "now" vertical divider
             drawLine(
                 color = Color(0xFFCFC8DB),
@@ -686,6 +721,17 @@ internal fun DrawScope.drawTrendChart(
                     pathEffect = DASH_7_5,
                 )
                 drawCircle(color = colors.projectionCurrent, radius = 4f * scale, center = Offset(endX, goalY))
+            }
+            (projReady.expectedPace as? PaceUi.Reachable)?.let { ePace ->
+                val endX = xOf(ePace.date)
+                drawLine(
+                    color = colors.projectionExpected,
+                    start = Offset(nowX, nowY),
+                    end = Offset(endX, goalY),
+                    strokeWidth = 2.4f * scale,
+                    pathEffect = DASH_7_5,
+                )
+                drawCircle(color = colors.projectionExpected, radius = 4f * scale, center = Offset(endX, goalY))
             }
         }
 
@@ -732,6 +778,29 @@ internal fun DrawScope.drawTrendChart(
                     )
                     drawText(noteM, topLeft = Offset(nowX + 4f, mt + ph - noteM.size.height - 4f))
                 }
+            }
+        }
+
+        // Expected pace label (below its end-dot): "expected: <date> ± <n> d", where n is the
+        // cone half-width at the goal converted to days via the expected rate.
+        val ePace = projReady.expectedPace
+        if (ePace is PaceUi.Reachable) {
+            val endX = xOf(ePace.date)
+            if (xVisible(endX)) {
+                val hGoal = ChronoUnit.DAYS.between(last.date, ePace.date)
+                val rateKgPerDay = ePace.rateLbPerDay / KG_TO_LB
+                val nDays = if (rateKgPerDay == 0.0) 999L
+                    else (PaceEstimator.coneHalfWidthKg(hGoal) / abs(rateKgPerDay)).roundToLong().coerceAtMost(999L)
+                // Display cap: a slow rate divides into huge ± values that carry no information.
+                val nText = if (nDays > 90L) "90+" else "$nDays"
+                val eLbl = "expected: ${ePace.date.format(DATE_FMT_LONG)} ± $nText d"
+                val eM = textMeasurer.measure(
+                    eLbl,
+                    TextStyle(fontSize = 10.sp, color = colors.projectionExpected, fontWeight = FontWeight.SemiBold),
+                )
+                // One full label-height below the current-pace label (which sits at goalY + 16f),
+                // so the two 10.sp labels never overlap at any density.
+                drawText(eM, topLeft = Offset((endX - eM.size.width / 2f).coerceIn(2f, w - eM.size.width - 2f), goalY + 16f + eM.size.height + 4f))
             }
         }
     }

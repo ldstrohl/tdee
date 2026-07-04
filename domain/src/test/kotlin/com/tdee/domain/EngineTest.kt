@@ -40,7 +40,7 @@ class EngineTest {
     // ---- EMA -------------------------------------------------------------
 
     @Test
-    fun `ema matches hand-computed series with carry-forward`() {
+    fun `ema matches hand-computed series with gap-aware alpha and carry-forward`() {
         // N=14 -> alpha = 2/15. Days: d0=80, d1=82, (d2 missing -> carry), d3=78.
         val d0 = LocalDate.of(2026, 1, 1)
         val samples = listOf(
@@ -53,9 +53,12 @@ class EngineTest {
         val alpha = 2.0 / 15.0
 
         val ema0 = 80.0
+        // d1: dt=1 since previous weigh-in (d0) -> alphaEff = alpha.
         val ema1 = alpha * 82.0 + (1 - alpha) * ema0
-        val ema2 = ema1 // carried forward
-        val ema3 = alpha * 78.0 + (1 - alpha) * ema2
+        val ema2 = ema1 // carried forward (no weigh-in on d2)
+        // d3: dt=2 since previous weigh-in (d1) -> alphaEff = 1 - (1-alpha)^2.
+        val alphaEff3 = 1 - (1 - alpha) * (1 - alpha)
+        val ema3 = alphaEff3 * 78.0 + (1 - alphaEff3) * ema2
 
         assertEquals(ema0, engine.weightTrendAt(at(d0)), 1e-9)
         assertEquals(ema1, engine.weightTrendAt(at(d0.plusDays(1))), 1e-9)

@@ -84,9 +84,10 @@ data class MacroSummary(
  *
  * [goalPace] projects arrival at [goalKg] using the profile's [UserProfile.goalRateKgPerWeek].
  * [currentPace] projects arrival using the slope observed in the recent EMA window.
+ * [expectedPace] projects arrival using the λ-blended expected rate (recent + long-run) from
+ * `PaceEstimator`; [expectedRateKgPerDay] is that blended rate (needed for the P90 cone endpoints).
  *
- * Either projection may be [Projection.Unreachable] (e.g. current pace is flat or moving
- * away from goal).
+ * Any projection may be [Projection.Unreachable] (e.g. a pace is flat or moving away from goal).
  *
  * All weights are in kg; UI converts to the display unit.
  */
@@ -95,4 +96,6 @@ data class WeightProjection(
     val goalKg: Double,
     val goalPace: Projection,
     val currentPace: Projection,
+    val expectedPace: Projection,
+    val expectedRateKgPerDay: Double,
 )

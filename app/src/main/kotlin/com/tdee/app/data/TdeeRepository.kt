@@ -3,6 +3,7 @@ package com.tdee.app.data
 import com.tdee.domain.DailyIntake
 import com.tdee.domain.DefaultTdeeEngine
 import com.tdee.domain.GoalProjector
+import com.tdee.domain.PaceEstimator
 import com.tdee.domain.Projection
 import com.tdee.domain.TargetCalculator
 import com.tdee.domain.Targets
@@ -18,6 +19,7 @@ import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.temporal.ChronoUnit
 import java.util.UUID
 import kotlin.random.Random
 
@@ -149,6 +151,20 @@ class TdeeRepository(
             ?: throw IllegalStateException("No user profile")
         val today = logDay(clock.instant(), zone, profileEntity.dayStartHour)
         !latest.startDate.isAfter(today.minusDays(7))
+    }
+
+    /**
+     * Days between today's log-day and the log-day of the most recent weight entry, or null if the
+     * user has no weight entries yet. Drives the "weigh-in reminder" dashboard nudge.
+     */
+    suspend fun daysSinceLastWeighIn(): Long? = withContext(Dispatchers.IO) {
+        val uid = currentUser.userId()
+        val latestTimestamp = weightDao.getLatestTimestamp(uid) ?: return@withContext null
+        val profileEntity = profileDao.get(uid)
+            ?: throw IllegalStateException("No user profile")
+        val today = logDay(clock.instant(), zone, profileEntity.dayStartHour)
+        val lastWeighInDay = logDay(latestTimestamp, zone, profileEntity.dayStartHour)
+        ChronoUnit.DAYS.between(lastWeighInDay, today)
     }
 
     /**
@@ -1152,11 +1168,42 @@ class TdeeRepository(
             zone = zone,
         )
 
+        // Expected pace: λ-blend of the responsive recent rate (above) and a stable long-run rate
+        // measured over ~90 days (or the whole log if younger), per PaceEstimator. The long-run
+        // window is anchored to the first weigh-in day, and its actual span is passed to
+        // expectedPace() so a young log (< MIN_LONGRUN_SPAN_DAYS) degenerates to the recent rate.
+        val firstWeighInDay = samples.minOfOrNull { logDay(it.t, zone, profile.dayStartHour) }
+        val longRunSpan = if (firstWeighInDay == null) 0L
+            else minOf(
+                PaceEstimator.LONGRUN_LOOKBACK_DAYS,
+                java.time.temporal.ChronoUnit.DAYS.between(firstWeighInDay, today),
+            )
+        val longRunRateKgPerDay = if (longRunSpan >= 1L) {
+            val lrStart = today.minusDays(longRunSpan)
+            val lrStartInstant = lrStart.atStartOfDay(zone).toInstant()
+                .plusSeconds(profile.dayStartHour.toLong() * 3600)
+            (emaToday - engine.weightTrendAt(lrStartInstant)) / longRunSpan.toDouble()
+        } else currentRateKgPerDay
+        val expectedRateKgPerDay = PaceEstimator.expectedPace(
+            recent = currentRateKgPerDay,
+            longRun = longRunRateKgPerDay,
+            longRunSpanDays = longRunSpan,
+        )
+        val expectedPace = GoalProjector.projectAtRate(
+            trendNowKg = currentTrendKg,
+            goalKg = goalKg,
+            rateKgPerDay = expectedRateKgPerDay,
+            asOf = now,
+            zone = zone,
+        )
+
         WeightProjection(
             currentTrendKg = currentTrendKg,
             goalKg = goalKg,
             goalPace = goalPace,
             currentPace = currentPace,
+            expectedPace = expectedPace,
+            expectedRateKgPerDay = expectedRateKgPerDay,
         )
     }
 

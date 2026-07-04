@@ -34,6 +34,10 @@ data class ChartColors(
     val projectionGoal: Color,
     /** Projection line — current-rate trajectory. */
     val projectionCurrent: Color,
+    /** Projection line — λ-blended expected-pace trajectory (and its P90 cone). */
+    val projectionExpected: Color,
+    /** Alpha for the translucent P90 cone fill drawn under the expected-pace line. */
+    val projectionConeAlpha: Float,
     /** Chart grid lines. */
     val gridLine: Color,
     /** Chart axis labels. */

@@ -147,7 +147,7 @@ fun DashboardScreen(
             }
 
             is DashboardUiState.Loaded -> {
-                LoadedContent(s, onCheckin, dateLabel, onOpenChart)
+                LoadedContent(s, onCheckin, onAddWeight, dateLabel, onOpenChart)
             }
         }
 
@@ -187,6 +187,7 @@ fun DashboardScreen(
 private fun LoadedContent(
     s: DashboardUiState.Loaded,
     onCheckin: () -> Unit,
+    onAddWeight: () -> Unit,
     dateLabel: String,
     onOpenChart: (ChartType) -> Unit,
 ) {
@@ -209,6 +210,34 @@ private fun LoadedContent(
                     )
                 }
                 TextButton(onClick = onCheckin) { Text("Check in") }
+            }
+        }
+    }
+
+    // Weigh-in reminder — stateless nudge, only shown when the last weigh-in is stale or missing.
+    val daysSince = s.daysSinceLastWeighIn
+    if (daysSince == null || daysSince > 3) {
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Weigh-in reminder", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        text = if (daysSince == null) {
+                            "Log a weigh-in to start your trend"
+                        } else {
+                            "No weigh-in for $daysSince days — logging one keeps your trend sharp"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                TextButton(onClick = onAddWeight) { Text("Log weight") }
             }
         }
     }

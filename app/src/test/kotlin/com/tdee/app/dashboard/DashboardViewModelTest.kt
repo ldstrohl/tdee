@@ -481,6 +481,120 @@ class DashboardViewModelTest {
     }
 
     // -----------------------------------------------------------------------
+    // 11. Weigh-in reminder — daysSinceLastWeighIn
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `daysSinceLastWeighIn reflects a 5-day-old weigh-in (reminder should show)`() = runTest {
+        val freshDb = Room.inMemoryDatabaseBuilder(
+            RuntimeEnvironment.getApplication(),
+            AppDatabase::class.java,
+        ).allowMainThreadQueries().build()
+        val freshUserId = "reminder-user-5-day"
+        val freshRepo = TdeeRepository(
+            profileDao = freshDb.userProfileDao(),
+            weightDao = freshDb.weightEntryDao(),
+            foodDao = freshDb.foodEntryDao(),
+            targetDao = freshDb.targetPeriodDao(),
+            trendCacheDao = freshDb.weightTrendCacheDao(),
+            savedMealDao = freshDb.savedMealDao(),
+            currentUser = CurrentUser { freshUserId },
+            zone = zone,
+            clock = fixedClock,
+        )
+        freshDb.userProfileDao().upsert(makeProfile(goalRateKgPerWeek = -0.25).copy(userId = freshUserId))
+        val weighInTs = fixedNow.minus(5, java.time.temporal.ChronoUnit.DAYS)
+        freshDb.weightEntryDao().insert(
+            WeightEntryEntity(
+                userId = freshUserId,
+                timestamp = weighInTs,
+                weightKg = 80.0,
+                source = WeightSource.MANUAL,
+                createdAt = weighInTs,
+            )
+        )
+
+        val vm = DashboardViewModel(freshRepo)
+        val loaded = vm.state
+            .filter { it is DashboardUiState.Loaded }
+            .first() as DashboardUiState.Loaded
+
+        assertEquals(5L, loaded.daysSinceLastWeighIn)
+
+        freshDb.close()
+    }
+
+    @Test
+    fun `daysSinceLastWeighIn reflects a 1-day-old weigh-in (reminder should not show)`() = runTest {
+        val freshDb = Room.inMemoryDatabaseBuilder(
+            RuntimeEnvironment.getApplication(),
+            AppDatabase::class.java,
+        ).allowMainThreadQueries().build()
+        val freshUserId = "reminder-user-1-day"
+        val freshRepo = TdeeRepository(
+            profileDao = freshDb.userProfileDao(),
+            weightDao = freshDb.weightEntryDao(),
+            foodDao = freshDb.foodEntryDao(),
+            targetDao = freshDb.targetPeriodDao(),
+            trendCacheDao = freshDb.weightTrendCacheDao(),
+            savedMealDao = freshDb.savedMealDao(),
+            currentUser = CurrentUser { freshUserId },
+            zone = zone,
+            clock = fixedClock,
+        )
+        freshDb.userProfileDao().upsert(makeProfile(goalRateKgPerWeek = -0.25).copy(userId = freshUserId))
+        val weighInTs = fixedNow.minus(1, java.time.temporal.ChronoUnit.DAYS)
+        freshDb.weightEntryDao().insert(
+            WeightEntryEntity(
+                userId = freshUserId,
+                timestamp = weighInTs,
+                weightKg = 80.0,
+                source = WeightSource.MANUAL,
+                createdAt = weighInTs,
+            )
+        )
+
+        val vm = DashboardViewModel(freshRepo)
+        val loaded = vm.state
+            .filter { it is DashboardUiState.Loaded }
+            .first() as DashboardUiState.Loaded
+
+        assertEquals(1L, loaded.daysSinceLastWeighIn)
+
+        freshDb.close()
+    }
+
+    @Test
+    fun `daysSinceLastWeighIn is null with no weight samples at all`() = runTest {
+        val freshDb = Room.inMemoryDatabaseBuilder(
+            RuntimeEnvironment.getApplication(),
+            AppDatabase::class.java,
+        ).allowMainThreadQueries().build()
+        val freshUserId = "reminder-user-no-samples"
+        val freshRepo = TdeeRepository(
+            profileDao = freshDb.userProfileDao(),
+            weightDao = freshDb.weightEntryDao(),
+            foodDao = freshDb.foodEntryDao(),
+            targetDao = freshDb.targetPeriodDao(),
+            trendCacheDao = freshDb.weightTrendCacheDao(),
+            savedMealDao = freshDb.savedMealDao(),
+            currentUser = CurrentUser { freshUserId },
+            zone = zone,
+            clock = fixedClock,
+        )
+        freshDb.userProfileDao().upsert(makeProfile(goalRateKgPerWeek = -0.25).copy(userId = freshUserId))
+
+        val vm = DashboardViewModel(freshRepo)
+        val loaded = vm.state
+            .filter { it is DashboardUiState.Loaded }
+            .first() as DashboardUiState.Loaded
+
+        assertNull("No weight samples → daysSinceLastWeighIn should be null", loaded.daysSinceLastWeighIn)
+
+        freshDb.close()
+    }
+
+    // -----------------------------------------------------------------------
     // 10. Date navigation — selectedDate / prevDay / nextDay / dayFoods
     // -----------------------------------------------------------------------
 

@@ -92,6 +92,7 @@ internal fun furthestReachableDate(projection: ProjectionUi): LocalDate? {
     return listOfNotNull(
         (ready.goalPace as? PaceUi.Reachable)?.date,
         (ready.currentPace as? PaceUi.Reachable)?.date,
+        (ready.expectedPace as? PaceUi.Reachable)?.date,
     ).maxOrNull()
 }
 
