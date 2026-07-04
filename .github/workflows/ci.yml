@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # local.properties is gitignored; AGP falls back to ANDROID_HOME, which the
+      # ubuntu runner preinstalls. Missing SDK components (compileSdk 36, build-tools)
+      # are auto-provisioned by AGP with licenses pre-accepted on the runner.
+      - name: Unit tests + debug build
+        run: ./gradlew :domain:test :app:testDebugUnitTest :app:assembleDebug
