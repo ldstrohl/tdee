@@ -52,6 +52,7 @@ import com.tdee.app.ui.theme.ChartColors
 import com.tdee.app.ui.theme.LocalChartColors
 import com.tdee.domain.PaceEstimator
 import kotlin.math.abs
+import kotlin.math.ceil
 import kotlin.math.roundToLong
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -517,12 +518,32 @@ private val DASH_7_5 = PathEffect.dashPathEffect(floatArrayOf(7f, 5f))
 private val DASH_3_3 = PathEffect.dashPathEffect(floatArrayOf(3f, 3f))
 
 /**
- * Max horizon (days past "now") the P90 cone is drawn to. 28 d is the primary calibration point of
- * [PaceEstimator.CONE_P90_KG_PER_DAY] (P90 ≈ 5.9 lb at +28 d on the back-test); beyond a month the
- * band exceeds typical chart scale and stops being readable — the end-label's ± figure carries the
- * long-horizon uncertainty instead.
+ * Max days past the nominal expected goal date the P90 cone may be drawn to. When the expected
+ * rate |r| is at most the P90 growth rate c the slow cone edge never crosses the goal weight (at
+ * P90 the goal may never be reached), so the wedge is cut here instead — matching the end-label's
+ * "90+" display cap on the ± figure.
  */
-private const val CONE_MAX_HORIZON_DAYS = 28L
+private const val CONE_GOAL_OVERSHOOT_CAP_DAYS = 90L
+
+/**
+ * The date the P90 cone is drawn out to. The cone terminates on the goal line so its intersection
+ * with the goal weight reads as the P90 span of goal-arrival dates: the fast edge (slope |r|+c)
+ * crosses the goal at hGoal·|r|/(|r|+c) and the slow edge (slope |r|−c) at hGoal·|r|/(|r|−c),
+ * where hGoal is the nominal horizon, r the expected rate, and c = [PaceEstimator.CONE_P90_KG_PER_DAY].
+ * Returns the slow-edge crossing, capped at hGoal + [CONE_GOAL_OVERSHOOT_CAP_DAYS] (also the
+ * fallback when |r| ≤ c and the slow edge never crosses). Null when there is no reachable
+ * expected pace.
+ */
+internal fun coneEndDate(projection: ProjectionUi, lastDataDate: LocalDate): LocalDate? {
+    val ready = projection as? ProjectionUi.Ready ?: return null
+    val ePace = ready.expectedPace as? PaceUi.Reachable ?: return null
+    val hGoal = ChronoUnit.DAYS.between(lastDataDate, ePace.date)
+    if (hGoal <= 0) return null
+    val rate = abs(ready.expectedRateLbPerDay)
+    val cone = PaceEstimator.CONE_P90_KG_PER_DAY * KG_TO_LB
+    val hLate = if (rate > cone) ceil(hGoal * rate / (rate - cone)).toLong() else Long.MAX_VALUE
+    return lastDataDate.plusDays(minOf(hLate, hGoal + CONE_GOAL_OVERSHOOT_CAP_DAYS))
+}
 
 /**
  * Draws the trend chart on the current Canvas.
@@ -566,7 +587,10 @@ internal fun DrawScope.drawTrendChart(
     val projReady = projection as? ProjectionUi.Ready
     val tMin: LocalDate = xDomain?.first ?: historyDates.first()
     val tMax: LocalDate = xDomain?.second
-        ?: furthestReachableDate(projection)?.takeIf { it.isAfter(historyDates.last()) }
+        ?: listOfNotNull(
+            furthestReachableDate(projection),
+            coneEndDate(projection, historyDates.last()),
+        ).maxOrNull()?.takeIf { it.isAfter(historyDates.last()) }
         ?: historyDates.last()
 
     val totalDays = ChronoUnit.DAYS.between(tMin, tMax).toFloat().coerceAtLeast(1f)
@@ -671,15 +695,16 @@ internal fun DrawScope.drawTrendChart(
             // P90 cone (under everything else): a translucent wedge from the "now" apex opening
             // rightward. Center line = trendNowLb + expectedRateLbPerDay·h; the linearly-growing
             // half-width means both edges are straight, so the wedge is an exact triangle whose apex
-            // (h=0, half-width=0) sits on the expected line's start. Drawn to the earliest of the
-            // expected end date, "now" + CONE_MAX_HORIZON_DAYS, and the visible right edge (tMax);
-            // past the horizon cap the wedge ends with a flat vertical edge mid-chart.
+            // (h=0, half-width=0) sits on the expected line's start. Drawn out to [coneEndDate] —
+            // where the slow cone edge crosses the goal weight — and clipped on the past-goal side
+            // at the goal line, so the wedge terminates ON the goal line and its intersection with
+            // it reads as the P90 span of goal-arrival dates.
             (projReady.expectedPace as? PaceUi.Reachable)?.let { ePace ->
                 val trendNowLb = last.emaLb
-                val coneEndDate = minOf(ePace.date, last.date.plusDays(CONE_MAX_HORIZON_DAYS), tMax)
-                val hEnd = ChronoUnit.DAYS.between(last.date, coneEndDate)
+                val coneEnd = minOf(coneEndDate(projReady, last.date) ?: ePace.date, tMax)
+                val hEnd = ChronoUnit.DAYS.between(last.date, coneEnd)
                 if (hEnd > 0) {
-                    val coneEndX = xOf(coneEndDate)
+                    val coneEndX = xOf(coneEnd)
                     val centerEndLb = trendNowLb + projReady.expectedRateLbPerDay * hEnd
                     val halfEndLb = PaceEstimator.coneHalfWidthKg(hEnd) * KG_TO_LB
                     val cone = Path().apply {
@@ -688,7 +713,11 @@ internal fun DrawScope.drawTrendChart(
                         lineTo(coneEndX, yOf(centerEndLb - halfEndLb))
                         close()
                     }
-                    drawPath(cone, color = colors.projectionExpected.copy(alpha = colors.projectionConeAlpha))
+                    val clipTop = if (goalLb != null && goalLb > trendNowLb) goalY else mt
+                    val clipBottom = if (goalLb != null && goalLb < trendNowLb) goalY else mt + ph
+                    clipRect(left = ml, top = clipTop, right = w - mr, bottom = clipBottom) {
+                        drawPath(cone, color = colors.projectionExpected.copy(alpha = colors.projectionConeAlpha))
+                    }
                 }
             }
 
