@@ -176,25 +176,21 @@ class DashboardViewModel(
     private fun load() {
         viewModelScope.launch {
             try {
-                val estimateDeferred = async { repo.currentEstimate() }
-                val trendKgDeferred = async { repo.currentTrendKg() }
-                val targetsDeferred = async { repo.activeTargets() }
+                val snapshotDeferred = async { repo.dashboardSnapshot() }
                 val checkinDueDeferred = async { repo.checkinDue() }
                 val daysSinceLastWeighInDeferred = async { repo.daysSinceLastWeighIn() }
 
-                val estimate = estimateDeferred.await()
-                val trendKg = trendKgDeferred.await()
-                val targets = targetsDeferred.await()
+                val snapshot = snapshotDeferred.await()
                 val checkinDue = checkinDueDeferred.await()
                 val daysSinceLastWeighIn = daysSinceLastWeighInDeferred.await()
 
                 _loadedBase.value = LoadedBase(
-                    tdeeKcal = estimate.valueKcal.toInt(),
-                    tdeeMethod = estimate.method,
-                    calibrating = estimate.calibrating,
-                    trendWeightLb = kgToLb(trendKg),
-                    calorieTargetKcal = targets.calorieTargetKcal.toInt(),
-                    macroTargets = targets,
+                    tdeeKcal = snapshot.estimate.valueKcal.toInt(),
+                    tdeeMethod = snapshot.estimate.method,
+                    calibrating = snapshot.estimate.calibrating,
+                    trendWeightLb = kgToLb(snapshot.trendKg),
+                    calorieTargetKcal = snapshot.targets.calorieTargetKcal.toInt(),
+                    macroTargets = snapshot.targets,
                     checkinDue = checkinDue,
                     daysSinceLastWeighIn = daysSinceLastWeighIn,
                 )

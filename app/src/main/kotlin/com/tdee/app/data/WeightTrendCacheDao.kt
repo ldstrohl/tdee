@@ -12,6 +12,10 @@ interface WeightTrendCacheDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entry: WeightTrendCacheEntity)
 
+    /** Batch upsert; Room runs the whole list in a single transaction. */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entries: List<WeightTrendCacheEntity>)
+
     @Query("SELECT * FROM weight_trend_cache WHERE userId = :userId ORDER BY date ASC")
     suspend fun getAll(userId: String): List<WeightTrendCacheEntity>
 

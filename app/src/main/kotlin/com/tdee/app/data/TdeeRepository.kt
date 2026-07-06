@@ -49,6 +49,13 @@ fun NewFoodItem.scaledBy(factor: Double): NewFoodItem = copy(
 /** Applies [scaledBy] to every item in the list. */
 fun List<NewFoodItem>.scaledBy(factor: Double): List<NewFoodItem> = map { it.scaledBy(factor) }
 
+/** Single-engine-build snapshot of the values the dashboard needs, returned by [TdeeRepository.dashboardSnapshot]. */
+data class DashboardSnapshot(
+    val estimate: TdeeEstimate,
+    val trendKg: Double,
+    val targets: Targets,
+)
+
 /**
  * Integration layer between the Room data layer and the domain TDEE engine.
  *
@@ -92,20 +99,36 @@ class TdeeRepository(
         return DefaultTdeeEngine(samples, intake, profile, zone) to profile
     }
 
+    /** Estimate + trend weight from a single [buildEngine] call, evaluated at [clock]'s current instant. */
+    private data class EngineSnapshot(
+        val estimate: TdeeEstimate,
+        val trendKg: Double,
+        val profile: UserProfile,
+    )
+
+    /**
+     * Builds the engine once and evaluates both [TdeeEstimate] and EMA trend weight at [clock]'s
+     * current instant. Shared by [currentEstimate], [currentTrendKg], [proposedTargets], and
+     * [dashboardSnapshot] so their semantics can't drift apart.
+     */
+    private suspend fun computeEngineSnapshot(): EngineSnapshot {
+        val (engine, profile) = buildEngine()
+        val now = clock.instant()
+        return EngineSnapshot(engine.estimateAt(now), engine.weightTrendAt(now), profile)
+    }
+
     // -----------------------------------------------------------------------
     // Public API
     // -----------------------------------------------------------------------
 
     /** Returns the current TDEE estimate evaluated at [clock]'s current instant. */
     suspend fun currentEstimate(): TdeeEstimate = withContext(Dispatchers.IO) {
-        val (engine, _) = buildEngine()
-        engine.estimateAt(clock.instant())
+        computeEngineSnapshot().estimate
     }
 
     /** Returns the current EMA trend weight in kg evaluated at [clock]'s current instant. */
     suspend fun currentTrendKg(): Double = withContext(Dispatchers.IO) {
-        val (engine, _) = buildEngine()
-        engine.weightTrendAt(clock.instant())
+        computeEngineSnapshot().trendKg
     }
 
     /**
@@ -113,11 +136,22 @@ class TdeeRepository(
      * Builds the engine once internally to avoid redundant DB reads.
      */
     suspend fun proposedTargets(): Targets = withContext(Dispatchers.IO) {
-        val (engine, profile) = buildEngine()
-        val now = clock.instant()
-        val estimate = engine.estimateAt(now)
-        val trendKg = engine.weightTrendAt(now)
-        TargetCalculator.targets(estimate, trendKg, profile)
+        val snapshot = computeEngineSnapshot()
+        TargetCalculator.targets(snapshot.estimate, snapshot.trendKg, snapshot.profile)
+    }
+
+    /**
+     * The dashboard's one-shot read model: current [TdeeEstimate], EMA trend weight (kg), and the
+     * active [Targets] (latest [TargetPeriodEntity], falling back to the live engine proposal) —
+     * all derived from a single engine build instead of the three separate calls
+     * [currentEstimate]/[currentTrendKg]/[activeTargets] would each perform on their own.
+     */
+    suspend fun dashboardSnapshot(): DashboardSnapshot = withContext(Dispatchers.IO) {
+        val snapshot = computeEngineSnapshot()
+        val proposed = TargetCalculator.targets(snapshot.estimate, snapshot.trendKg, snapshot.profile)
+        val uid = currentUser.userId()
+        val targets = targetDao.getLatest(uid)?.toTargets() ?: proposed
+        DashboardSnapshot(snapshot.estimate, snapshot.trendKg, targets)
     }
 
     // -----------------------------------------------------------------------
@@ -298,6 +332,7 @@ class TdeeRepository(
             .atZone(zone)
             .toLocalDate()
 
+        val cacheRows = mutableListOf<WeightTrendCacheEntity>()
         var day = firstDay
         while (!day.isAfter(currentDay)) {
             // Convert the log-day back to an Instant: the start of the log-day boundary
@@ -308,18 +343,20 @@ class TdeeRepository(
             val estimate = engine.estimateAt(dayInstant)
             val emaKg = engine.weightTrendAt(dayInstant)
 
-            val cacheRow = WeightTrendCacheEntity(
-                userId = uid,
-                date = day,
-                emaKg = emaKg,
-                tdeeEstimate = estimate.valueKcal,
-                tdeeMethod = estimate.method.toDb(),
-                uncertaintyKcal = estimate.uncertaintyKcal,
-                calibrating = estimate.calibrating,
+            cacheRows.add(
+                WeightTrendCacheEntity(
+                    userId = uid,
+                    date = day,
+                    emaKg = emaKg,
+                    tdeeEstimate = estimate.valueKcal,
+                    tdeeMethod = estimate.method.toDb(),
+                    uncertaintyKcal = estimate.uncertaintyKcal,
+                    calibrating = estimate.calibrating,
+                )
             )
-            trendCacheDao.upsert(cacheRow)
             day = day.plusDays(1)
         }
+        trendCacheDao.upsertAll(cacheRows)
     }
 
     // -----------------------------------------------------------------------
@@ -479,8 +516,8 @@ class TdeeRepository(
             now
         }
         val mealId = UUID.randomUUID().toString()
-        for (item in items) {
-            foodDao.insert(
+        foodDao.insertAll(
+            items.map { item ->
                 FoodEntryEntity(
                     userId = uid,
                     timestamp = timestamp,
@@ -499,8 +536,8 @@ class TdeeRepository(
                     createdAt = now,
                     updatedAt = now,
                 )
-            )
-        }
+            }
+        )
         mealId
     }
 
@@ -1156,7 +1193,7 @@ class TdeeRepository(
         val windowStart = today.minusDays(paceLookbackDays)
         val startInstant = windowStart.atStartOfDay(zone).toInstant()
             .plusSeconds(profile.dayStartHour.toLong() * 3600)
-        val emaToday = engine.weightTrendAt(now)
+        val emaToday = currentTrendKg
         val emaStart = engine.weightTrendAt(startInstant)
         val currentRateKgPerDay = (emaToday - emaStart) / paceLookbackDays.toDouble()
 
@@ -1247,6 +1284,8 @@ class TdeeRepository(
         val startWeightKg = 90.0
         val dailyTrendKg = -0.05 // ~0.35 kg/week loss
 
+        val weightRows = mutableListOf<WeightEntryEntity>()
+        val foodRows = mutableListOf<FoodEntryEntity>()
         for (dayOffset in (totalDays - 1) downTo 0) {
             val date = today.minusDays(dayOffset.toLong())
             val trendWeight = startWeightKg + dailyTrendKg * (totalDays - 1 - dayOffset)
@@ -1254,7 +1293,7 @@ class TdeeRepository(
             val weightKg = trendWeight + noise
 
             val weightTs = date.atStartOfDay(zone).toInstant().plusSeconds(7 * 3600L)
-            weightDao.insert(
+            weightRows.add(
                 WeightEntryEntity(
                     userId = uid,
                     timestamp = weightTs,
@@ -1272,7 +1311,7 @@ class TdeeRepository(
 
                 for ((kcal, hour) in mealKcals.zip(mealHours)) {
                     val mealTs = date.atStartOfDay(zone).toInstant().plusSeconds(hour * 3600L)
-                    foodDao.insert(
+                    foodRows.add(
                         FoodEntryEntity(
                             userId = uid,
                             timestamp = mealTs,
@@ -1293,6 +1332,8 @@ class TdeeRepository(
                 }
             }
         }
+        weightDao.insertAll(weightRows)
+        foodDao.insertAll(foodRows)
     }
 }
 

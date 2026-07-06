@@ -164,6 +164,23 @@ class TdeeRepositoryTest {
         )
     }
 
+    @Test
+    fun `dashboardSnapshot matches the three individual calls`() = runTest {
+        val snapshot = repo.dashboardSnapshot()
+        val estimate = repo.currentEstimate()
+        val trendKg = repo.currentTrendKg()
+        val targets = repo.activeTargets()
+
+        assertEquals(estimate.valueKcal, snapshot.estimate.valueKcal, 0.0001)
+        assertEquals(estimate.method, snapshot.estimate.method)
+        assertEquals(estimate.calibrating, snapshot.estimate.calibrating)
+        assertEquals(trendKg, snapshot.trendKg, 0.0001)
+        assertEquals(targets.calorieTargetKcal, snapshot.targets.calorieTargetKcal, 0.0001)
+        assertEquals(targets.proteinG, snapshot.targets.proteinG, 0.0001)
+        assertEquals(targets.fatG, snapshot.targets.fatG, 0.0001)
+        assertEquals(targets.carbG, snapshot.targets.carbG, 0.0001)
+    }
+
     // -----------------------------------------------------------------------
     // 2. proposedTargets() macro arithmetic
     // -----------------------------------------------------------------------
