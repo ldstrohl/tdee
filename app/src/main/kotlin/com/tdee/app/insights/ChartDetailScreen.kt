@@ -177,12 +177,12 @@ fun ChartDetailScreen(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 when (type) {
-                    ChartType.TREND -> WeightRange.values().forEach { r ->
+                    ChartType.TREND -> ChartRange.values().forEach { r ->
                         Pill(r.label, r == state.selectedRange) {
                             viewModel.setRange(r); transform.reset()
                         }
                     }
-                    ChartType.EXPENDITURE -> ExpenditureRange.values().forEach { r ->
+                    ChartType.EXPENDITURE -> ChartRange.values().forEach { r ->
                         Pill(r.label, r == state.expenditureRange) {
                             viewModel.setExpenditureRange(r); transform.reset()
                         }

@@ -50,6 +50,7 @@ import com.tdee.app.data.DayExpenditurePoint
 import com.tdee.app.data.MacroSummary
 import com.tdee.app.ui.theme.ChartColors
 import com.tdee.app.ui.theme.LocalChartColors
+import com.tdee.domain.KG_TO_LB
 import com.tdee.domain.PaceEstimator
 import kotlin.math.abs
 import kotlin.math.ceil
@@ -143,8 +144,8 @@ fun InsightsScreen(
 @Composable
 internal fun WeightTrendPanel(
     points: List<WeightPointLb>,
-    selectedRange: WeightRange,
-    onRangeSelected: (WeightRange) -> Unit,
+    selectedRange: ChartRange,
+    onRangeSelected: (ChartRange) -> Unit,
     predictionOn: Boolean,
     onPredictionToggle: () -> Unit,
     projection: ProjectionUi,
@@ -169,7 +170,7 @@ internal fun WeightTrendPanel(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            WeightRange.values().forEach { range ->
+            ChartRange.values().forEach { range ->
                 Pill(
                     label = range.label,
                     active = range == selectedRange,
@@ -266,8 +267,8 @@ internal fun WeightTrendChart(
 @Composable
 private fun ExpenditureChartSection(
     points: List<DayExpenditurePoint>,
-    selectedRange: ExpenditureRange,
-    onRangeSelected: (ExpenditureRange) -> Unit,
+    selectedRange: ChartRange,
+    onRangeSelected: (ChartRange) -> Unit,
     onMaximize: () -> Unit = {},
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -287,7 +288,7 @@ private fun ExpenditureChartSection(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            ExpenditureRange.values().forEach { range ->
+            ChartRange.values().forEach { range ->
                 Pill(
                     label = range.label,
                     active = range == selectedRange,

@@ -12,6 +12,7 @@ import com.tdee.app.data.WeightEntryEntity
 import com.tdee.app.data.WeightSource
 import com.tdee.domain.ActivityLevel
 import com.tdee.domain.Sex
+import com.tdee.domain.kgToLb
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.filter
@@ -602,7 +603,7 @@ class DashboardViewModelTest {
     fun `setSelectedDate makes dayFoods reflect the chosen day`() = runTest {
         // The seed setup inserts food at 13:00 UTC for each of day0..day0+6.
         // Navigate the VM to day0 and verify dayFoods shows that day's entry.
-        val vm = DashboardViewModel(repo, fixedDay)
+        val vm = DashboardViewModel(repo, fixedDay, clock = { fixedDay })
 
         vm.setSelectedDate(day0)
 
@@ -615,7 +616,7 @@ class DashboardViewModelTest {
 
     @Test
     fun `prevDay moves selectedDate back one day`() = runTest {
-        val vm = DashboardViewModel(repo, fixedDay)
+        val vm = DashboardViewModel(repo, fixedDay, clock = { fixedDay })
 
         vm.prevDay()
 
@@ -629,7 +630,7 @@ class DashboardViewModelTest {
         // fixedDay = 2026-06-21; prevDay → 2026-06-20 (no seed food).
         // Let's use setSelectedDate to a day we know has food.
         val targetDay = day0.plusDays(2) // 2026-06-15 — has seed food
-        val vm = DashboardViewModel(repo, fixedDay)
+        val vm = DashboardViewModel(repo, fixedDay, clock = { fixedDay })
 
         vm.setSelectedDate(targetDay.plusDays(1)) // navigate to 2026-06-16
         vm.prevDay()                              // → 2026-06-15
@@ -645,7 +646,7 @@ class DashboardViewModelTest {
     @Test
     fun `nextDay clamps to today and does not go into the future`() = runTest {
         // VM's "today" is fixedDay (2026-06-21). nextDay() from today should stay at today.
-        val vm = DashboardViewModel(repo, fixedDay)
+        val vm = DashboardViewModel(repo, fixedDay, clock = { fixedDay })
         assertEquals(fixedDay, vm.selectedDate.value)
 
         vm.nextDay()
@@ -655,7 +656,7 @@ class DashboardViewModelTest {
 
     @Test
     fun `nextDay advances when currently viewing a past day`() = runTest {
-        val vm = DashboardViewModel(repo, fixedDay)
+        val vm = DashboardViewModel(repo, fixedDay, clock = { fixedDay })
         vm.setSelectedDate(fixedDay.minusDays(2))
 
         vm.nextDay()
@@ -665,13 +666,81 @@ class DashboardViewModelTest {
 
     @Test
     fun `goToToday resets selectedDate back to today`() = runTest {
-        val vm = DashboardViewModel(repo, fixedDay)
+        val vm = DashboardViewModel(repo, fixedDay, clock = { fixedDay })
         vm.setSelectedDate(day0) // navigate to a past day
         assertEquals(day0, vm.selectedDate.value)
 
         vm.goToToday()
 
         assertEquals(fixedDay, vm.selectedDate.value)
+    }
+
+    @Test
+    fun `nextDay succeeds past the old today once the clock advances a day`() = runTest {
+        // The clock isn't frozen at construction — a mutable clock lets navigation follow
+        // the real calendar date across a midnight rollover instead of getting stuck.
+        var clockDay = fixedDay
+        val vm = DashboardViewModel(repo, fixedDay, clock = { clockDay })
+        assertEquals(fixedDay, vm.selectedDate.value)
+
+        vm.nextDay() // still clamped to fixedDay — the clock hasn't advanced yet
+        assertEquals(fixedDay, vm.selectedDate.value)
+
+        clockDay = fixedDay.plusDays(1)
+        vm.nextDay()
+
+        assertEquals(fixedDay.plusDays(1), vm.selectedDate.value)
+    }
+
+    // -----------------------------------------------------------------------
+    // 12. Error state — load failure surfaces a message and retry recovers it
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `load failure surfaces an Error state instead of hanging on Loading`() = runTest {
+        // No profile exists for this user, so dashboardSnapshot() throws "No user profile".
+        val noProfileRepo = TdeeRepository(
+            profileDao = db.userProfileDao(),
+            weightDao = db.weightEntryDao(),
+            foodDao = db.foodEntryDao(),
+            targetDao = db.targetPeriodDao(),
+            trendCacheDao = db.weightTrendCacheDao(),
+            savedMealDao = db.savedMealDao(),
+            currentUser = CurrentUser { "no-such-user" },
+            zone = zone,
+            clock = fixedClock,
+        )
+        val vm = DashboardViewModel(noProfileRepo)
+
+        val error = vm.state.filter { it is DashboardUiState.Error }.first() as DashboardUiState.Error
+
+        assertEquals("No user profile", error.message)
+    }
+
+    @Test
+    fun `reload after a fixed error reaches Loaded state`() = runTest {
+        val userId2 = "retry-user"
+        val noProfileRepo = TdeeRepository(
+            profileDao = db.userProfileDao(),
+            weightDao = db.weightEntryDao(),
+            foodDao = db.foodEntryDao(),
+            targetDao = db.targetPeriodDao(),
+            trendCacheDao = db.weightTrendCacheDao(),
+            savedMealDao = db.savedMealDao(),
+            currentUser = CurrentUser { userId2 },
+            zone = zone,
+            clock = fixedClock,
+        )
+        val vm = DashboardViewModel(noProfileRepo)
+        vm.state.filter { it is DashboardUiState.Error }.first()
+
+        // Fix the underlying problem, then retry.
+        db.userProfileDao().upsert(makeProfile(goalRateKgPerWeek = -0.25).copy(userId = userId2))
+        vm.reload()
+
+        val loaded = vm.state.filter { it is DashboardUiState.Loaded }.first()
+
+        assertTrue("Retry after fixing the error should reach Loaded", loaded is DashboardUiState.Loaded)
     }
 
     // -----------------------------------------------------------------------

@@ -11,6 +11,7 @@ import com.tdee.app.data.FoodEntryEntity
 import com.tdee.app.data.TdeeRepository
 import com.tdee.domain.Targets
 import com.tdee.domain.TdeeMethod
+import com.tdee.domain.kgToLb
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,13 +22,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.supervisorScope
 import java.time.LocalDate
-
-// ---------------------------------------------------------------------------
-// Units helpers — kg→lb conversion lives here, nowhere else
-// ---------------------------------------------------------------------------
-
-internal fun kgToLb(kg: Double): Double = kg * 2.2046226
 
 // ---------------------------------------------------------------------------
 // UI state
@@ -47,6 +43,8 @@ data class ConsumedTotals(
 
 sealed interface DashboardUiState {
     data object Loading : DashboardUiState
+
+    data class Error(val message: String) : DashboardUiState
 
     data class Loaded(
         /** TDEE estimate, rounded to nearest kcal. */
@@ -81,13 +79,17 @@ sealed interface DashboardUiState {
 class DashboardViewModel(
     private val repo: TdeeRepository,
     initialDate: LocalDate = LocalDate.now(),
+    private val clock: () -> LocalDate = { LocalDate.now() },
 ) : ViewModel() {
 
     // One-shot state for TDEE/targets/trend (not reactive — these require heavy engine compute).
     private val _loadedBase = MutableStateFlow<LoadedBase?>(null)
 
+    /** Error message from the most recent failed [load], cleared at the start of each attempt. */
+    private val _loadError = MutableStateFlow<String?>(null)
+
     /** The current date ceiling; used to clamp future navigation. */
-    private val today = initialDate
+    private fun today(): LocalDate = clock()
 
     /** The currently viewed log-day. Defaults to today; can be navigated by the user. */
     val selectedDate = MutableStateFlow(initialDate)
@@ -107,9 +109,9 @@ class DashboardViewModel(
      * Whenever dayFoods emits a new list, consumed totals are re-derived and the state
      * is updated automatically — no polling or re-navigation needed.
      */
-    val state: StateFlow<DashboardUiState> = combine(_loadedBase, dayFoods) { base, foods ->
+    val state: StateFlow<DashboardUiState> = combine(_loadedBase, dayFoods, _loadError) { base, foods, error ->
         if (base == null) {
-            DashboardUiState.Loading
+            if (error != null) DashboardUiState.Error(error) else DashboardUiState.Loading
         } else {
             val consumed = foods.toConsumedTotals()
             DashboardUiState.Loaded(
@@ -159,7 +161,7 @@ class DashboardViewModel(
     // -----------------------------------------------------------------------
 
     /** Clamps [d] to [today] (prevents future-date navigation) and updates [selectedDate]. */
-    fun setSelectedDate(d: LocalDate) { selectedDate.value = minOf(d, today) }
+    fun setSelectedDate(d: LocalDate) { selectedDate.value = minOf(d, today()) }
 
     /** Moves [selectedDate] one day into the past. */
     fun prevDay() { setSelectedDate(selectedDate.value.minusDays(1)) }
@@ -171,18 +173,25 @@ class DashboardViewModel(
     fun nextDay() { setSelectedDate(selectedDate.value.plusDays(1)) }
 
     /** Resets [selectedDate] to today. */
-    fun goToToday() { selectedDate.value = today }
+    fun goToToday() { selectedDate.value = today() }
 
     private fun load() {
+        _loadError.value = null
         viewModelScope.launch {
             try {
-                val snapshotDeferred = async { repo.dashboardSnapshot() }
-                val checkinDueDeferred = async { repo.checkinDue() }
-                val daysSinceLastWeighInDeferred = async { repo.daysSinceLastWeighIn() }
+                // supervisorScope: if one fetch fails, it must not cancel the sibling fetches
+                // before their own (possible) failures are consumed below.
+                val (snapshot, checkinDue, daysSinceLastWeighIn) = supervisorScope {
+                    val snapshotDeferred = async { repo.dashboardSnapshot() }
+                    val checkinDueDeferred = async { repo.checkinDue() }
+                    val daysSinceLastWeighInDeferred = async { repo.daysSinceLastWeighIn() }
 
-                val snapshot = snapshotDeferred.await()
-                val checkinDue = checkinDueDeferred.await()
-                val daysSinceLastWeighIn = daysSinceLastWeighInDeferred.await()
+                    Triple(
+                        snapshotDeferred.await(),
+                        checkinDueDeferred.await(),
+                        daysSinceLastWeighInDeferred.await(),
+                    )
+                }
 
                 _loadedBase.value = LoadedBase(
                     tdeeKcal = snapshot.estimate.valueKcal.toInt(),
@@ -195,8 +204,8 @@ class DashboardViewModel(
                     daysSinceLastWeighIn = daysSinceLastWeighIn,
                 )
             } catch (e: Exception) {
-                // Stay in Loading on error — safety net for race conditions only.
                 _loadedBase.value = null
+                _loadError.value = e.message ?: "Failed to load"
             }
         }
     }

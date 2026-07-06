@@ -146,6 +146,21 @@ fun DashboardScreen(
                 Text("Loading…", style = MaterialTheme.typography.bodyMedium)
             }
 
+            is DashboardUiState.Error -> {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        s.message,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                    TextButton(onClick = { viewModel.reload() }) { Text("Retry") }
+                }
+            }
+
             is DashboardUiState.Loaded -> {
                 LoadedContent(s, onCheckin, onAddWeight, dateLabel, onOpenChart)
             }

@@ -10,6 +10,7 @@ import com.tdee.domain.Targets
 import com.tdee.domain.TdeeEstimate
 import com.tdee.domain.TdeeMethod
 import com.tdee.domain.UserProfile
+import com.tdee.domain.kgToLb
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
@@ -89,6 +90,10 @@ class TdeeRepository(
      * on a background thread (the suspend DAO calls satisfy this when used with Room's coroutine
      * dispatcher, but we wrap each public function in withContext(IO) to be explicit).
      */
+    /** The start instant of the log-day [date], given [dayStartHour]: midnight of [date] in [zone] shifted forward by [dayStartHour] hours. */
+    private fun logDayStart(date: LocalDate, dayStartHour: Int): Instant =
+        date.atStartOfDay(zone).toInstant().plusSeconds(dayStartHour.toLong() * 3600)
+
     private suspend fun buildEngine(): Pair<DefaultTdeeEngine, UserProfile> {
         val uid = currentUser.userId()
         val profileEntity = profileDao.get(uid)
@@ -231,7 +236,7 @@ class TdeeRepository(
         // EMA change over the last 7 days (lb): trend now minus trend a week ago.
         val sevenDaysAgo = now.minusSeconds(7 * 24 * 3600L)
         val trendChangeKg = engine.weightTrendAt(now) - engine.weightTrendAt(sevenDaysAgo)
-        val trendChangeLb = trendChangeKg * 2.2046226
+        val trendChangeLb = kgToLb(trendChangeKg)
 
         val current = targetDao.getLatest(uid)?.toTargets()
 
@@ -335,10 +340,7 @@ class TdeeRepository(
         val cacheRows = mutableListOf<WeightTrendCacheEntity>()
         var day = firstDay
         while (!day.isAfter(currentDay)) {
-            // Convert the log-day back to an Instant: the start of the log-day boundary
-            // is midnight of `day` in `zone` plus dayStartHour hours.
-            val dayInstant = day.atStartOfDay(zone).toInstant()
-                .plusSeconds(profile.dayStartHour.toLong() * 3600)
+            val dayInstant = logDayStart(day, profile.dayStartHour)
 
             val estimate = engine.estimateAt(dayInstant)
             val emaKg = engine.weightTrendAt(dayInstant)
@@ -611,8 +613,7 @@ class TdeeRepository(
                 emptyFlow()
             } else {
                 val dayStart = logDay(clock.instant(), zone, profileEntity.dayStartHour)
-                val windowStart = dayStart.atStartOfDay(zone).toInstant()
-                    .plusSeconds(profileEntity.dayStartHour * 3600L)
+                val windowStart = logDayStart(dayStart, profileEntity.dayStartHour)
                 val windowEnd = windowStart.plusSeconds(24 * 3600L)
                 foodDao.observeActiveInRange(uid, windowStart, windowEnd)
             }
@@ -630,8 +631,7 @@ class TdeeRepository(
         val profileEntity = profileDao.get(uid) ?: return@withContext emptyList()
         val dayStart = logDay(clock.instant(), zone, profileEntity.dayStartHour)
         // Log-day window: [dayStart + dayStartHour, dayStart + dayStartHour + 24h)
-        val windowStart = dayStart.atStartOfDay(zone).toInstant()
-            .plusSeconds(profileEntity.dayStartHour * 3600L)
+        val windowStart = logDayStart(dayStart, profileEntity.dayStartHour)
         val windowEnd = windowStart.plusSeconds(24 * 3600L)
         foodDao.getActiveInRange(uid, windowStart, windowEnd)
     }
@@ -770,8 +770,7 @@ class TdeeRepository(
             if (profileEntity == null) {
                 emptyFlow()
             } else {
-                val windowStart = date.atStartOfDay(zone).toInstant()
-                    .plusSeconds(profileEntity.dayStartHour * 3600L)
+                val windowStart = logDayStart(date, profileEntity.dayStartHour)
                 val windowEnd = windowStart.plusSeconds(24 * 3600L)
                 foodDao.observeActiveInRange(uid, windowStart, windowEnd)
             }
@@ -785,8 +784,7 @@ class TdeeRepository(
         withContext(Dispatchers.IO) {
             val uid = currentUser.userId()
             val profileEntity = profileDao.get(uid) ?: return@withContext emptyList()
-            val windowStart = date.atStartOfDay(zone).toInstant()
-                .plusSeconds(profileEntity.dayStartHour * 3600L)
+            val windowStart = logDayStart(date, profileEntity.dayStartHour)
             val windowEnd = windowStart.plusSeconds(24 * 3600L)
             foodDao.getActiveInRange(uid, windowStart, windowEnd)
         }
@@ -912,8 +910,7 @@ class TdeeRepository(
         val result = mutableListOf<DayWeightPoint>()
         var day = firstDay
         while (!day.isAfter(today)) {
-            val dayInstant = day.atStartOfDay(zone).toInstant()
-                .plusSeconds(profile.dayStartHour.toLong() * 3600)
+            val dayInstant = logDayStart(day, profile.dayStartHour)
             val emaKg = engine.weightTrendAt(dayInstant)
             result.add(DayWeightPoint(date = day, rawKg = rawByDay[day], emaKg = emaKg))
             day = day.plusDays(1)
@@ -949,8 +946,7 @@ class TdeeRepository(
         val result = mutableListOf<DayExpenditurePoint>()
         var day = firstDay
         while (!day.isAfter(today)) {
-            val dayInstant = day.atStartOfDay(zone).toInstant()
-                .plusSeconds(profile.dayStartHour.toLong() * 3600)
+            val dayInstant = logDayStart(day, profile.dayStartHour)
             val estimate = engine.estimateAt(dayInstant)
             val intake = intakeByDay[day]
             result.add(
@@ -1031,14 +1027,12 @@ class TdeeRepository(
 
         val dates = (rawByDay.keys + macrosByDay.keys).toSortedSet()
 
-        val kgToLb = 2.2046226
         fun num1(v: Double) = String.format(java.util.Locale.US, "%.1f", v)
         fun whole(v: Double) = Math.round(v).toString()
 
         val sb = StringBuilder(header).append("\n")
         for (date in dates) {
-            val dayInstant = date.atStartOfDay(zone).toInstant()
-                .plusSeconds(profile.dayStartHour.toLong() * 3600)
+            val dayInstant = logDayStart(date, profile.dayStartHour)
             val emaKg = engine.weightTrendAt(dayInstant)
             val tdee = engine.estimateAt(dayInstant).valueKcal
 
@@ -1046,8 +1040,8 @@ class TdeeRepository(
             val macros = macrosByDay[date]
 
             sb.append(date.toString()).append(',')
-                .append(if (rawKg != null) num1(rawKg * kgToLb) else "").append(',')
-                .append(num1(emaKg * kgToLb)).append(',')
+                .append(if (rawKg != null) num1(kgToLb(rawKg)) else "").append(',')
+                .append(num1(kgToLb(emaKg))).append(',')
                 .append(if (macros != null) whole(macros.kcal) else "").append(',')
                 .append(if (macros != null) whole(macros.proteinG) else "").append(',')
                 .append(if (macros != null) whole(macros.fatG) else "").append(',')
@@ -1191,8 +1185,7 @@ class TdeeRepository(
         val paceLookbackDays = 14L
         val today = logDay(now, zone, profile.dayStartHour)
         val windowStart = today.minusDays(paceLookbackDays)
-        val startInstant = windowStart.atStartOfDay(zone).toInstant()
-            .plusSeconds(profile.dayStartHour.toLong() * 3600)
+        val startInstant = logDayStart(windowStart, profile.dayStartHour)
         val emaToday = currentTrendKg
         val emaStart = engine.weightTrendAt(startInstant)
         val currentRateKgPerDay = (emaToday - emaStart) / paceLookbackDays.toDouble()
@@ -1217,8 +1210,7 @@ class TdeeRepository(
             )
         val longRunRateKgPerDay = if (longRunSpan >= 1L) {
             val lrStart = today.minusDays(longRunSpan)
-            val lrStartInstant = lrStart.atStartOfDay(zone).toInstant()
-                .plusSeconds(profile.dayStartHour.toLong() * 3600)
+            val lrStartInstant = logDayStart(lrStart, profile.dayStartHour)
             (emaToday - engine.weightTrendAt(lrStartInstant)) / longRunSpan.toDouble()
         } else currentRateKgPerDay
         val expectedRateKgPerDay = PaceEstimator.expectedPace(

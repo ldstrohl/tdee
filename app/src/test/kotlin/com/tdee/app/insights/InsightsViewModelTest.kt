@@ -13,6 +13,7 @@ import com.tdee.app.data.WeightEntryEntity
 import com.tdee.app.data.WeightProjection
 import com.tdee.app.data.WeightSource
 import com.tdee.domain.ActivityLevel
+import com.tdee.domain.KG_TO_LB
 import com.tdee.domain.Projection
 import com.tdee.domain.Sex
 import kotlinx.coroutines.Dispatchers
@@ -165,7 +166,7 @@ class InsightsViewModelTest {
         val vm = InsightsViewModel(repo)
         awaitLoaded(vm)
 
-        vm.setRange(WeightRange.M1)
+        vm.setRange(ChartRange.M1)
         val state = vm.state.value
 
         // The visible window should start no earlier than today - 30 days.
@@ -186,7 +187,7 @@ class InsightsViewModelTest {
         val vm = InsightsViewModel(repo)
         awaitLoaded(vm)
 
-        vm.setRange(WeightRange.ALL)
+        vm.setRange(ChartRange.ALL)
         val state = vm.state.value
 
         // All points should be visible.
@@ -201,7 +202,7 @@ class InsightsViewModelTest {
         val vm = InsightsViewModel(repo)
         awaitLoaded(vm)
 
-        assertEquals(WeightRange.M3, vm.state.value.selectedRange)
+        assertEquals(ChartRange.M3, vm.state.value.selectedRange)
     }
 
     @Test
@@ -217,9 +218,9 @@ class InsightsViewModelTest {
         assertTrue(vm.state.value.predictionOn)
 
         // Switch range — prediction should stay on.
-        vm.setRange(WeightRange.M1)
+        vm.setRange(ChartRange.M1)
         assertTrue("predictionOn should remain true after range change", vm.state.value.predictionOn)
-        assertEquals(WeightRange.M1, vm.state.value.selectedRange)
+        assertEquals(ChartRange.M1, vm.state.value.selectedRange)
     }
 
     // -----------------------------------------------------------------------
@@ -346,10 +347,10 @@ class InsightsViewModelTest {
         val vm = InsightsViewModel(repo)
         awaitLoaded(vm)
 
-        vm.setRange(WeightRange.M6)
+        vm.setRange(ChartRange.M6)
         vm.setPrediction(true)
 
-        assertEquals("Range should stay M6 after toggling prediction", WeightRange.M6, vm.state.value.selectedRange)
+        assertEquals("Range should stay M6 after toggling prediction", ChartRange.M6, vm.state.value.selectedRange)
     }
 
     // -----------------------------------------------------------------------
@@ -601,10 +602,10 @@ class InsightsViewModelTest {
 
         // Default range is M3 (90 days) — with 50 days of data, all points visible
         val stateM3 = vm.state.value
-        assertEquals(ExpenditureRange.M3, stateM3.expenditureRange)
+        assertEquals(ChartRange.M3, stateM3.expenditureRange)
 
         // Switch to M1 (30 days)
-        vm.setExpenditureRange(ExpenditureRange.M1)
+        vm.setExpenditureRange(ChartRange.M1)
         val stateM1 = vm.state.value
         val cutoff = today.minusDays(30)
         assertTrue(
@@ -622,14 +623,14 @@ class InsightsViewModelTest {
         val vm = InsightsViewModel(repo)
         awaitLoaded(vm)
 
-        vm.setRange(WeightRange.M6)
+        vm.setRange(ChartRange.M6)
         vm.setPrediction(true)
-        vm.setExpenditureRange(ExpenditureRange.M1)
+        vm.setExpenditureRange(ChartRange.M1)
 
         val state = vm.state.value
-        assertEquals("Trend range unchanged", WeightRange.M6, state.selectedRange)
+        assertEquals("Trend range unchanged", ChartRange.M6, state.selectedRange)
         assertTrue("Prediction unchanged", state.predictionOn)
-        assertEquals("Expenditure range updated", ExpenditureRange.M1, state.expenditureRange)
+        assertEquals("Expenditure range updated", ChartRange.M1, state.expenditureRange)
     }
 
     // -----------------------------------------------------------------------
@@ -717,14 +718,14 @@ class InsightsViewModelTest {
         val vm = InsightsViewModel(repo)
         awaitLoaded(vm)
 
-        vm.setRange(WeightRange.M6)
-        vm.setExpenditureRange(ExpenditureRange.Y1)
+        vm.setRange(ChartRange.M6)
+        vm.setExpenditureRange(ChartRange.Y1)
         vm.setMacroWindow(MacroWindow.M3)
 
         // Allow the coroutine to complete
         val state = vm.state.value
-        assertEquals("Trend range unchanged", WeightRange.M6, state.selectedRange)
-        assertEquals("Expenditure range unchanged", ExpenditureRange.Y1, state.expenditureRange)
+        assertEquals("Trend range unchanged", ChartRange.M6, state.selectedRange)
+        assertEquals("Expenditure range unchanged", ChartRange.Y1, state.expenditureRange)
         assertEquals("Macro window updated", MacroWindow.M3, state.macroWindow)
     }
 }
