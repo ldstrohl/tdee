@@ -19,12 +19,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
@@ -375,17 +377,27 @@ internal fun DrawScope.drawTrendChart(
                         lineTo(coneEndX, yOf(centerEndLb - halfEndLb))
                         close()
                     }
+                    // Horizontal fade so the long-horizon tail reads lighter than the apex: full
+                    // cone alpha at the apex x, easing to ~0.15× by the cone end (never fully gone).
+                    val coneBrush = Brush.horizontalGradient(
+                        colors = listOf(
+                            colors.projectionExpected.copy(alpha = colors.projectionConeAlpha),
+                            colors.projectionExpected.copy(alpha = colors.projectionConeAlpha * 0.15f),
+                        ),
+                        startX = nowX,
+                        endX = coneEndX,
+                    )
                     val clipTop = if (goalLb != null && goalLb > trendNowLb) goalY else mt
                     val clipBottom = if (goalLb != null && goalLb < trendNowLb) goalY else mt + ph
                     clipRect(left = ml, top = clipTop, right = w - mr, bottom = clipBottom) {
-                        drawPath(cone, color = colors.projectionExpected.copy(alpha = colors.projectionConeAlpha))
+                        drawPath(cone, brush = coneBrush)
                     }
                 }
             }
 
             // "now" vertical divider
             drawLine(
-                color = Color(0xFFCFC8DB),
+                color = colors.nowDivider,
                 start = Offset(nowX, mt),
                 end = Offset(nowX, mt + ph),
                 strokeWidth = 1f,
@@ -428,71 +440,81 @@ internal fun DrawScope.drawTrendChart(
 
         // "now" label
         if (xVisible(nowX)) {
-            val nowM = textMeasurer.measure("now", TextStyle(fontSize = 9.sp, color = Color(0xFF8A7FB0)))
+            val nowM = textMeasurer.measure("now", TextStyle(fontSize = 9.sp, color = colors.nowLabel))
             drawText(nowM, topLeft = Offset(nowX - nowM.size.width / 2f, mt + 2f))
         }
 
-        // Goal pace label (above the end-dot, clamped to the canvas width)
-        val gPace = projReady.goalPace
-        if (gPace is PaceUi.Reachable) {
-            val endX = xOf(gPace.date)
-            if (xVisible(endX)) {
-                val gLbl = "goal pace: ${gPace.date.format(DATE_FMT_LONG)}"
-                val gM = textMeasurer.measure(
-                    gLbl,
-                    TextStyle(fontSize = 10.sp, color = colors.projectionGoal, fontWeight = FontWeight.SemiBold),
-                )
-                drawText(gM, topLeft = Offset((endX - gM.size.width / 2f).coerceIn(2f, w - gM.size.width - 2f), goalY - gM.size.height - 10f))
-            }
+        // Reachable-pace end-labels: collect goal/current/expected, then clamp each into the plot
+        // area horizontally and de-overlap vertically so converging lines (or the right axis) never
+        // produce colliding text. Each label keeps its color and its target slot (goal-pace above
+        // the line, current/expected below); a non-reachable current pace keeps its own
+        // left-anchored "not on track" note instead.
+        val endLabels = mutableListOf<PlacedLabel>()
+        fun addEndLabel(date: LocalDate, text: String, color: Color, above: Boolean) {
+            val endX = xOf(date)
+            if (!xVisible(endX)) return
+            val layout = textMeasurer.measure(
+                text,
+                TextStyle(fontSize = 10.sp, color = color, fontWeight = FontWeight.SemiBold),
+            )
+            val left = (endX - layout.size.width / 2f)
+                .coerceIn(ml, (w - mr - layout.size.width).coerceAtLeast(ml))
+            val top = if (above) goalY - layout.size.height - 10f else goalY + 16f
+            endLabels += PlacedLabel(layout, left, top)
         }
 
-        // Current pace label (below the end-dot) or "not on track" note
-        when (val cPace = projReady.currentPace) {
-            is PaceUi.Reachable -> {
-                val endX = xOf(cPace.date)
-                if (xVisible(endX)) {
-                    val cLbl = "current pace: ${cPace.date.format(DATE_FMT_LONG)}"
-                    val cM = textMeasurer.measure(
-                        cLbl,
-                        TextStyle(fontSize = 10.sp, color = colors.projectionCurrent, fontWeight = FontWeight.SemiBold),
-                    )
-                    drawText(cM, topLeft = Offset((endX - cM.size.width / 2f).coerceIn(2f, w - cM.size.width - 2f), goalY + 16f))
-                }
-            }
-
-            is PaceUi.Unreachable -> {
-                // Show "not on track" note near the bottom of the "now" line
-                if (xVisible(nowX)) {
-                    val noteM = textMeasurer.measure(
-                        "current pace: not on track",
-                        TextStyle(fontSize = 9.sp, color = colors.projectionCurrent),
-                    )
-                    drawText(noteM, topLeft = Offset(nowX + 4f, mt + ph - noteM.size.height - 4f))
-                }
-            }
+        (projReady.goalPace as? PaceUi.Reachable)?.let {
+            addEndLabel(it.date, "goal pace: ${it.date.format(DATE_FMT_LONG)}", colors.projectionGoal, above = true)
+        }
+        (projReady.currentPace as? PaceUi.Reachable)?.let {
+            addEndLabel(it.date, "current pace: ${it.date.format(DATE_FMT_LONG)}", colors.projectionCurrent, above = false)
+        }
+        (projReady.expectedPace as? PaceUi.Reachable)?.let { ePace ->
+            // n = cone half-width at the goal converted to days via the expected rate.
+            val hGoal = ChronoUnit.DAYS.between(last.date, ePace.date)
+            val rateKgPerDay = ePace.rateLbPerDay / KG_TO_LB
+            val nDays = if (rateKgPerDay == 0.0) 999L
+                else (PaceEstimator.coneHalfWidthKg(hGoal) / abs(rateKgPerDay)).roundToLong().coerceAtMost(999L)
+            // Display cap: a slow rate divides into huge ± values that carry no information.
+            val nText = if (nDays > 90L) "90+" else "$nDays"
+            addEndLabel(ePace.date, "expected: ${ePace.date.format(DATE_FMT_LONG)} ± $nText d", colors.projectionExpected, above = false)
         }
 
-        // Expected pace label (below its end-dot): "expected: <date> ± <n> d", where n is the
-        // cone half-width at the goal converted to days via the expected rate.
-        val ePace = projReady.expectedPace
-        if (ePace is PaceUi.Reachable) {
-            val endX = xOf(ePace.date)
-            if (xVisible(endX)) {
-                val hGoal = ChronoUnit.DAYS.between(last.date, ePace.date)
-                val rateKgPerDay = ePace.rateLbPerDay / KG_TO_LB
-                val nDays = if (rateKgPerDay == 0.0) 999L
-                    else (PaceEstimator.coneHalfWidthKg(hGoal) / abs(rateKgPerDay)).roundToLong().coerceAtMost(999L)
-                // Display cap: a slow rate divides into huge ± values that carry no information.
-                val nText = if (nDays > 90L) "90+" else "$nDays"
-                val eLbl = "expected: ${ePace.date.format(DATE_FMT_LONG)} ± $nText d"
-                val eM = textMeasurer.measure(
-                    eLbl,
-                    TextStyle(fontSize = 10.sp, color = colors.projectionExpected, fontWeight = FontWeight.SemiBold),
-                )
-                // One full label-height below the current-pace label (which sits at goalY + 16f),
-                // so the two 10.sp labels never overlap at any density.
-                drawText(eM, topLeft = Offset((endX - eM.size.width / 2f).coerceIn(2f, w - eM.size.width - 2f), goalY + 16f + eM.size.height + 4f))
-            }
+        // Non-reachable current pace: left-anchored "not on track" note near the "now" line.
+        if (projReady.currentPace is PaceUi.Unreachable && xVisible(nowX)) {
+            val noteM = textMeasurer.measure(
+                "current pace: not on track",
+                TextStyle(fontSize = 9.sp, color = colors.projectionCurrent),
+            )
+            drawText(noteM, topLeft = Offset(nowX + 4f, mt + ph - noteM.size.height - 4f))
         }
+
+        deOverlapY(endLabels, topLimit = mt, bottomLimit = mt + ph, gap = 3f)
+        endLabels.forEach { drawText(it.layout, topLeft = Offset(it.left, it.top)) }
+    }
+}
+
+/** A measured label with a resolved top-left, used for one-pass vertical de-overlap. */
+private class PlacedLabel(val layout: TextLayoutResult, val left: Float, var top: Float)
+
+/**
+ * Vertical de-overlap within the plot area: process labels top-to-bottom, clamp the first at
+ * [topLimit], and push any label that would overlap the previous one down so it clears it by
+ * [gap] px. A second bottom-up pass then clamps the stack above [bottomLimit] (labels anchored
+ * near the goal line would otherwise get pushed into the x-axis tick band), preserving the gap.
+ * The stack's total height is far smaller than the plot, so both limits are always satisfiable.
+ */
+private fun deOverlapY(labels: MutableList<PlacedLabel>, topLimit: Float, bottomLimit: Float, gap: Float) {
+    labels.sortBy { it.top }
+    var cursor = topLimit
+    for (l in labels) {
+        if (l.top < cursor) l.top = cursor
+        cursor = l.top + l.layout.size.height + gap
+    }
+    var floor = bottomLimit
+    for (l in labels.asReversed()) {
+        val maxTop = floor - l.layout.size.height
+        if (l.top > maxTop) l.top = maxTop
+        floor = l.top - gap
     }
 }

@@ -42,6 +42,10 @@ data class ChartColors(
     val gridLine: Color,
     /** Chart axis labels. */
     val axisLabel: Color,
+    /** Vertical "now" divider line on the prediction overlay. */
+    val nowDivider: Color,
+    /** "now" / date label alongside the divider. */
+    val nowLabel: Color,
     /** Chart background / surface. */
     val chartSurface: Color,
 )
