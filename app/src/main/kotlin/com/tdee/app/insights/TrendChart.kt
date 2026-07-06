@@ -414,17 +414,6 @@ internal fun DrawScope.drawTrendChart(
                 )
                 drawCircle(color = colors.projectionGoal, radius = 4f * scale, center = Offset(endX, goalY))
             }
-            (projReady.currentPace as? PaceUi.Reachable)?.let { cPace ->
-                val endX = xOf(cPace.date)
-                drawLine(
-                    color = colors.projectionCurrent,
-                    start = Offset(nowX, nowY),
-                    end = Offset(endX, goalY),
-                    strokeWidth = 2.4f * scale,
-                    pathEffect = DASH_7_5,
-                )
-                drawCircle(color = colors.projectionCurrent, radius = 4f * scale, center = Offset(endX, goalY))
-            }
             (projReady.expectedPace as? PaceUi.Reachable)?.let { ePace ->
                 val endX = xOf(ePace.date)
                 drawLine(
@@ -444,11 +433,12 @@ internal fun DrawScope.drawTrendChart(
             drawText(nowM, topLeft = Offset(nowX - nowM.size.width / 2f, mt + 2f))
         }
 
-        // Reachable-pace end-labels: collect goal/current/expected, then clamp each into the plot
+        // Reachable-pace end-labels: collect goal/expected, then clamp each into the plot
         // area horizontally and de-overlap vertically so converging lines (or the right axis) never
         // produce colliding text. Each label keeps its color and its target slot (goal-pace above
-        // the line, current/expected below); a non-reachable current pace keeps its own
-        // left-anchored "not on track" note instead.
+        // the line, expected below). The current pace itself isn't drawn — it's one ingredient of
+        // the expected-pace blend — but a non-reachable current pace still gets a left-anchored
+        // "not on track" warning note.
         val endLabels = mutableListOf<PlacedLabel>()
         fun addEndLabel(date: LocalDate, text: String, color: Color, above: Boolean) {
             val endX = xOf(date)
@@ -465,9 +455,6 @@ internal fun DrawScope.drawTrendChart(
 
         (projReady.goalPace as? PaceUi.Reachable)?.let {
             addEndLabel(it.date, "goal pace: ${it.date.format(DATE_FMT_LONG)}", colors.projectionGoal, above = true)
-        }
-        (projReady.currentPace as? PaceUi.Reachable)?.let {
-            addEndLabel(it.date, "current pace: ${it.date.format(DATE_FMT_LONG)}", colors.projectionCurrent, above = false)
         }
         (projReady.expectedPace as? PaceUi.Reachable)?.let { ePace ->
             // n = cone half-width at the goal converted to days via the expected rate.

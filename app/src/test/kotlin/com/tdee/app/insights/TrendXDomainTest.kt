@@ -34,9 +34,9 @@ class TrendXDomainTest {
     private fun reachable(date: LocalDate) = PaceUi.Reachable(date, rateLbPerDay = -0.1)
 
     @Test
-    fun `furthest reachable date is the max of the two reachable paces`() {
+    fun `furthest reachable ignores the current pace (not drawn)`() {
         val p = ready(reachable(goalDate), reachable(currentDate))
-        assertEquals(currentDate, furthestReachableDate(p))
+        assertEquals(goalDate, furthestReachableDate(p))
     }
 
     @Test
@@ -71,7 +71,7 @@ class TrendXDomainTest {
     @Test
     fun `extendedDataMax extends to furthest reachable date when prediction on`() {
         val p = ready(reachable(goalDate), reachable(currentDate))
-        assertEquals(currentDate, extendedDataMax(lastData, p, predictionOn = true))
+        assertEquals(goalDate, extendedDataMax(lastData, p, predictionOn = true))
     }
 
     @Test
