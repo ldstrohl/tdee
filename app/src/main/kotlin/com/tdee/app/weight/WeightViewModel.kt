@@ -9,12 +9,12 @@ import com.tdee.app.TdeeApplication
 import com.tdee.app.data.HealthConnectSource
 import com.tdee.app.data.HealthConnectSyncManager
 import com.tdee.app.data.TdeeRepository
-import com.tdee.app.insights.KG_TO_LB
+import com.tdee.app.insights.ChartRange
 import com.tdee.app.insights.ProjectionUi
 import com.tdee.app.insights.WeightPointLb
-import com.tdee.app.insights.WeightRange
 import com.tdee.app.insights.buildProjectionUi
 import com.tdee.app.insights.toLb
+import com.tdee.domain.KG_TO_LB
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,7 +26,7 @@ enum class HcAvailability { UNKNOWN, CONNECTED, NEEDS_SETUP, UNAVAILABLE }
 data class WeightUiState(
     val allPoints: List<WeightPointLb> = emptyList(),
     val visiblePoints: List<WeightPointLb> = emptyList(),
-    val selectedRange: WeightRange = WeightRange.M3,
+    val selectedRange: ChartRange = ChartRange.M3,
     /** Goal weight in lb for the dashed goal line, or null when no goal is set. */
     val goalLb: Double? = null,
     val predictionOn: Boolean = false,
@@ -60,7 +60,7 @@ class WeightViewModel(
         load()
     }
 
-    fun setRange(range: WeightRange) {
+    fun setRange(range: ChartRange) {
         val cur = _state.value
         _state.value = cur.copy(selectedRange = range, visiblePoints = slice(cur.allPoints, range))
     }
@@ -139,7 +139,7 @@ class WeightViewModel(
         }
     }
 
-    private fun slice(all: List<WeightPointLb>, range: WeightRange): List<WeightPointLb> {
+    private fun slice(all: List<WeightPointLb>, range: ChartRange): List<WeightPointLb> {
         if (all.isEmpty()) return all
         val days = range.days ?: return all
         val cutoff = all.last().date.minusDays(days.toLong())

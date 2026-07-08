@@ -14,6 +14,10 @@ interface FoodEntryDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(entry: FoodEntryEntity): Long
 
+    /** Batch insert; Room runs the whole list in a single transaction. */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(entries: List<FoodEntryEntity>): List<Long>
+
     @Update
     suspend fun update(entry: FoodEntryEntity)
 

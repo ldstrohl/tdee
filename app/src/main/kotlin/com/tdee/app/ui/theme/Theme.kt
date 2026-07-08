@@ -84,6 +84,8 @@ private val LightChartColors = ChartColors(
     projectionConeAlpha = 0.10f,
     gridLine         = Color(0xFFE7E2EE),
     axisLabel        = Color(0xFF6B6478),
+    nowDivider       = Color(0xFFCFC8DB),  // muted lavender rule (designed on light)
+    nowLabel         = Color(0xFF8A7FB0),  // dim lavender label (designed on light)
     chartSurface     = Color(0xFFFAF8FD),
 )
 
@@ -107,6 +109,8 @@ private val DarkChartColors = ChartColors(
     projectionConeAlpha = 0.10f,
     gridLine         = Color(0xFF3A3540),  // subtle dark rule
     axisLabel        = Color(0xFFCAC4D0),  // matches onSurfaceVariant dark
+    nowDivider       = Color(0xFF544E66),  // dark lavender rule, a step above gridLine so it reads
+    nowLabel         = Color(0xFF9E93C0),  // dim lavender label (D0BCFF family, muted like axisLabel)
     chartSurface     = Color(0xFF2B2930),  // dark elevated surface (above #1C1B1F)
 )
 

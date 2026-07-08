@@ -91,15 +91,15 @@ internal fun furthestReachableDate(projection: ProjectionUi): LocalDate? {
     val ready = projection as? ProjectionUi.Ready ?: return null
     return listOfNotNull(
         (ready.goalPace as? PaceUi.Reachable)?.date,
-        (ready.currentPace as? PaceUi.Reachable)?.date,
         (ready.expectedPace as? PaceUi.Reachable)?.date,
     ).maxOrNull()
 }
 
 /**
- * The data-max date for the trend chart's x-domain: [lastDataDate], extended to the furthest
- * reachable prediction date when [predictionOn] and that date lies after the last weigh-in — so the
- * projection lines have room to reach the goal. Returns [lastDataDate] unchanged otherwise.
+ * The data-max date for the trend chart's x-domain: [lastDataDate], extended to the furthest of
+ * the reachable prediction dates and the P90 cone end ([coneEndDate]) when [predictionOn] and that
+ * date lies after the last weigh-in — so the projection lines and the cone have room to reach the
+ * goal. Returns [lastDataDate] unchanged otherwise.
  */
 internal fun extendedDataMax(
     lastDataDate: LocalDate,
@@ -107,7 +107,10 @@ internal fun extendedDataMax(
     predictionOn: Boolean,
 ): LocalDate {
     if (!predictionOn) return lastDataDate
-    val furthest = furthestReachableDate(projection) ?: return lastDataDate
+    val furthest = listOfNotNull(
+        furthestReachableDate(projection),
+        coneEndDate(projection, lastDataDate),
+    ).maxOrNull() ?: return lastDataDate
     return if (furthest.isAfter(lastDataDate)) furthest else lastDataDate
 }
 
@@ -173,12 +176,12 @@ fun ChartDetailScreen(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 when (type) {
-                    ChartType.TREND -> WeightRange.values().forEach { r ->
+                    ChartType.TREND -> ChartRange.values().forEach { r ->
                         Pill(r.label, r == state.selectedRange) {
                             viewModel.setRange(r); transform.reset()
                         }
                     }
-                    ChartType.EXPENDITURE -> ExpenditureRange.values().forEach { r ->
+                    ChartType.EXPENDITURE -> ChartRange.values().forEach { r ->
                         Pill(r.label, r == state.expenditureRange) {
                             viewModel.setExpenditureRange(r); transform.reset()
                         }

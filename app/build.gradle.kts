@@ -21,6 +21,9 @@ android {
 
     buildTypes {
         release {
+            // Debug-signed for personal sideloading; swap for a real upload
+            // keystore before any store submission.
+            signingConfig = signingConfigs.getByName("debug")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

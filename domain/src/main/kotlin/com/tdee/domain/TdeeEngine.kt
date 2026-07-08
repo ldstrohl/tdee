@@ -56,28 +56,33 @@ class DefaultTdeeEngine(
         return byDay.mapValues { it.value.kg }
     }
 
+    /** Aggregated daily weights, computed ONCE per engine instance (inputs are immutable). */
+    private val dailyWeights: Map<LocalDate, Double> by lazy { aggregatedDailyWeights() }
+
+    private val firstAggregatedDay: LocalDate? by lazy { dailyWeights.keys.minOrNull() }
+    private val lastAggregatedDay: LocalDate? by lazy { dailyWeights.keys.maxOrNull() }
+
     /**
-     * Build the dense daily EMA series from the first aggregated weight day
-     * through [endDay] (inclusive). Seed = first day's weight.
+     * The dense daily EMA series over ALL aggregated weight days, computed ONCE.
+     * Keyed [firstAggregatedDay]..[lastAggregatedDay] inclusive; empty when there are no samples.
+     * Because the EMA is prefix-stable (each day depends only on prior days), this single cached
+     * series answers [emaAt] for any date by lookup instead of re-running the recursion per query.
      *
-     * Gap-aware update: the smoothing constant α = 2/(N+1) is a *per-day* rate,
-     * but weigh-ins are irregular. On a weigh-in that lands [dtDays] days after
-     * the previous weigh-in we apply the compounded coefficient
+     * Gap-aware update: the smoothing constant α = 2/(N+1) is a *per-day* rate, but weigh-ins are
+     * irregular. On a weigh-in that lands [dtDays] days after the previous weigh-in we apply the
+     * compounded coefficient
      *   αEff = 1 − (1 − α)^dtDays
      * once, so the EMA's group delay is (N−1)/2 *days* rather than *samples*.
-     * (A gap of dtDays is equivalent to dtDays daily carry-forwards followed by a
-     * single α update on a hypothetical unchanged reading, collapsed into one step.)
+     * (A gap of dtDays is equivalent to dtDays daily carry-forwards followed by a single α update
+     * on a hypothetical unchanged reading, collapsed into one step.)
      * For a daily logger dtDays = 1 and αEff = α — identical to the old behavior.
-     * Non-weigh-in days still carry the value forward, so the returned map is dense.
-     *
-     * Returns an empty map if there are no samples or [endDay] precedes the
-     * first measured day.
+     * Non-weigh-in days still carry the value forward, so the series is dense.
      */
-    private fun emaSeries(endDay: LocalDate): Map<LocalDate, Double> {
-        val daily = aggregatedDailyWeights()
-        if (daily.isEmpty()) return emptyMap()
+    private val emaByDay: Map<LocalDate, Double> by lazy {
+        val daily = dailyWeights
+        if (daily.isEmpty()) return@lazy emptyMap()
         val firstDay = daily.keys.min()
-        if (endDay.isBefore(firstDay)) return emptyMap()
+        val endDay = daily.keys.max()
 
         val alpha = 2.0 / (profile.smoothingWindowDays + 1)
         val series = LinkedHashMap<LocalDate, Double>()
@@ -96,15 +101,26 @@ class DefaultTdeeEngine(
             series[day] = ema
             day = day.plusDays(1)
         }
-        return series
+        series
+    }
+
+    /**
+     * EMA trend weight at the log-day [endDay], sliced from the cached [emaByDay].
+     * Days on/before the last aggregated day are exact map hits; days after it carry the final
+     * EMA value forward (matching the old per-query dense build). Returns null when there are no
+     * samples or [endDay] precedes the first measured day.
+     */
+    private fun emaAt(endDay: LocalDate): Double? {
+        val fd = firstAggregatedDay ?: return null
+        if (endDay.isBefore(fd)) return null
+        return emaByDay[endDay] ?: emaByDay.getValue(lastAggregatedDay!!)
     }
 
     override fun weightTrendAt(asOf: Instant): Double {
         val endDay = logDay(asOf)
-        val series = emaSeries(endDay)
         // If no EMA is defined yet (no samples on/before endDay), fall back to
         // the latest raw sample at/before asOf, else the latest raw sample, else NaN.
-        return series[endDay]
+        return emaAt(endDay)
             ?: samples.filter { !it.t.isAfter(asOf) }.maxByOrNull { it.t }?.kg
             ?: samples.maxByOrNull { it.t }?.kg
             ?: Double.NaN
@@ -157,7 +173,7 @@ class DefaultTdeeEngine(
         val today = logDay(asOf)
         val windowEnd = today.minusDays(1)
 
-        val daily = aggregatedDailyWeights()
+        val daily = dailyWeights
         if (daily.isEmpty()) return Empirical(null, 0, 0, 0)
         val firstWeightDay = daily.keys.min()
 
@@ -168,9 +184,8 @@ class DefaultTdeeEngine(
         val span = ChronoUnit.DAYS.between(windowStart, windowEnd).toInt()
         if (span < 1) return Empirical(null, 0, 0, 0)
 
-        val series = emaSeries(windowEnd)
-        val emaEnd = series[windowEnd]
-        val emaStart = series[windowStart]
+        val emaEnd = emaAt(windowEnd)
+        val emaStart = emaAt(windowStart)
         if (emaEnd == null || emaStart == null) return Empirical(null, span, 0, 0)
 
         val intakeByDay = intake.associateBy { it.date }
@@ -181,7 +196,7 @@ class DefaultTdeeEngine(
             val di = intakeByDay[day]
             if (di != null && di.complete) {
                 completeKcals.add(di.kcal)
-                if (series.containsKey(day)) dataDays++
+                if (emaAt(day) != null) dataDays++
             }
             day = day.plusDays(1)
         }
@@ -250,10 +265,9 @@ class DefaultTdeeEngine(
     // daily intake (kcal). Both are measured from this user's own data; below MIN_SIGMA_SAMPLES
     // observations — or when the data is degenerate (flat → zero scatter) — safe defaults apply.
     private val sigmaW: Double by lazy {
-        val daily = aggregatedDailyWeights()
+        val daily = dailyWeights
         if (daily.size < MIN_SIGMA_SAMPLES) return@lazy SIGMA_W_DEFAULT
-        val series = emaSeries(daily.keys.max())
-        val resid = daily.mapNotNull { (d, kg) -> series[d]?.let { kg - it } }
+        val resid = daily.mapNotNull { (d, kg) -> emaByDay[d]?.let { kg - it } }
         if (resid.isEmpty()) return@lazy SIGMA_W_DEFAULT
         val rms = sqrt(resid.sumOf { it * it } / resid.size)
         if (rms > 0.0) rms else SIGMA_W_DEFAULT

@@ -12,18 +12,13 @@ import com.tdee.app.data.DayWeightPoint
 import com.tdee.app.data.MacroSummary
 import com.tdee.app.data.TdeeRepository
 import com.tdee.app.data.WeightProjection
+import com.tdee.domain.KG_TO_LB
 import com.tdee.domain.Projection
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.time.LocalDate
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-internal const val KG_TO_LB = 2.2046226
 
 // ---------------------------------------------------------------------------
 // Display types (all weights in lb)
@@ -57,22 +52,10 @@ sealed interface PaceUi {
 }
 
 // ---------------------------------------------------------------------------
-// Range selection
+// Range selection (shared by the weight-trend and expenditure charts)
 // ---------------------------------------------------------------------------
 
-enum class WeightRange(val label: String, val days: Int?) {
-    M1("1 mo", 30),
-    M3("3 mo", 90),
-    M6("6 mo", 180),
-    Y1("1 yr", 365),
-    ALL("All", null),
-}
-
-// ---------------------------------------------------------------------------
-// Expenditure range selection (1mo/3mo/6mo/1yr/all — no TODAY)
-// ---------------------------------------------------------------------------
-
-enum class ExpenditureRange(val label: String, val days: Int?) {
+enum class ChartRange(val label: String, val days: Int?) {
     M1("1 mo", 30),
     M3("3 mo", 90),
     M6("6 mo", 180),
@@ -100,14 +83,14 @@ enum class MacroWindow(val label: String, val chartWindow: ChartWindow) {
 data class InsightsUiState(
     val allPoints: List<WeightPointLb> = emptyList(),
     val visiblePoints: List<WeightPointLb> = emptyList(),
-    val selectedRange: WeightRange = WeightRange.M3,
+    val selectedRange: ChartRange = ChartRange.M3,
     val predictionOn: Boolean = false,
     val projection: ProjectionUi = ProjectionUi.NoGoal,
     val isLoading: Boolean = true,
     // Expenditure — independent of trend range/prediction
     val allExpenditurePoints: List<DayExpenditurePoint> = emptyList(),
     val visibleExpenditurePoints: List<DayExpenditurePoint> = emptyList(),
-    val expenditureRange: ExpenditureRange = ExpenditureRange.M3,
+    val expenditureRange: ChartRange = ChartRange.M3,
     // Macro donut — independent of trend and expenditure
     val macroSummary: MacroSummary? = null,
     val macroWindow: MacroWindow = MacroWindow.TODAY,
@@ -126,7 +109,7 @@ class InsightsViewModel(private val repo: TdeeRepository) : ViewModel() {
         load()
     }
 
-    fun setRange(range: WeightRange) {
+    fun setRange(range: ChartRange) {
         val current = _state.value
         _state.value = current.copy(
             selectedRange = range,
@@ -140,7 +123,7 @@ class InsightsViewModel(private val repo: TdeeRepository) : ViewModel() {
     }
 
     /** Change the expenditure chart range independently of the trend range. */
-    fun setExpenditureRange(range: ExpenditureRange) {
+    fun setExpenditureRange(range: ChartRange) {
         val current = _state.value
         _state.value = current.copy(
             expenditureRange = range,
@@ -217,7 +200,7 @@ class InsightsViewModel(private val repo: TdeeRepository) : ViewModel() {
         }
     }
 
-    private fun slice(all: List<WeightPointLb>, range: WeightRange): List<WeightPointLb> {
+    private fun slice(all: List<WeightPointLb>, range: ChartRange): List<WeightPointLb> {
         if (all.isEmpty()) return all
         val days = range.days ?: return all
         val cutoff = all.last().date.minusDays(days.toLong())
@@ -226,7 +209,7 @@ class InsightsViewModel(private val repo: TdeeRepository) : ViewModel() {
 
     private fun sliceExpenditure(
         all: List<DayExpenditurePoint>,
-        range: ExpenditureRange,
+        range: ChartRange,
     ): List<DayExpenditurePoint> {
         if (all.isEmpty()) return all
         val days = range.days ?: return all

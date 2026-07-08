@@ -11,7 +11,7 @@ import com.tdee.app.data.UserProfileEntity
 import com.tdee.app.data.WeightEntryEntity
 import com.tdee.app.data.WeightSource
 import com.tdee.app.insights.ProjectionUi
-import com.tdee.app.insights.WeightRange
+import com.tdee.app.insights.ChartRange
 import com.tdee.domain.ActivityLevel
 import com.tdee.domain.Sex
 import kotlinx.coroutines.Dispatchers
@@ -151,9 +151,9 @@ class WeightViewModelTest {
         val vm = makeVm()
         vm.awaitLoaded()
 
-        vm.setRange(WeightRange.ALL)
+        vm.setRange(ChartRange.ALL)
         val s = vm.state.value
-        assertEquals(WeightRange.ALL, s.selectedRange)
+        assertEquals(ChartRange.ALL, s.selectedRange)
         // ALL shows every loaded point.
         assertEquals(s.allPoints.size, s.visiblePoints.size)
     }
