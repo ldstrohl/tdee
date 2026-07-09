@@ -118,6 +118,8 @@ fun FoodHistoryScreen(
                     onRepeatEntry = { id, factor -> viewModel.repeatEntry(id, factor) },
                     onRenameMeal = { mealId, name -> viewModel.renameMeal(mealId, name) },
                     onRenameEntry = { id, name -> viewModel.renameEntry(id, name) },
+                    onLogMeal = { mealId, date, factor -> viewModel.logMealToDate(mealId, date, factor) },
+                    onLogEntry = { id, date, factor -> viewModel.logEntryToDate(id, date, factor) },
                 )
             }
         }

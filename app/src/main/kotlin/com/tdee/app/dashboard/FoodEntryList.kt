@@ -8,11 +8,16 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
@@ -24,6 +29,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.tdee.app.data.FoodEntryEntity
 import com.tdee.app.ui.MealMultiplierDialog
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneOffset
 
 // ---------------------------------------------------------------------------
 // Display model — shared between Dashboard and History
@@ -63,8 +71,12 @@ internal fun List<FoodEntryEntity>.toDisplayItems(): List<FoodDisplayItem> {
  *
  * When [onRenameMeal]/[onRenameEntry] are non-null, long-pressing a group header or an entry
  * row opens a rename dialog pre-filled with the current name.
+ *
+ * When [onLogMeal]/[onLogEntry] are non-null, a "Log" action appears on group headers /
+ * standalone rows that opens a date picker (future dates disabled) then [MealMultiplierDialog],
+ * and calls back with the chosen date and scale factor.
  */
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 internal fun FoodEntryList(
     foods: List<FoodEntryEntity>,
@@ -77,6 +89,8 @@ internal fun FoodEntryList(
     onSaveEntry: ((entryId: Long, name: String) -> Unit)? = null,
     onRenameMeal: ((mealId: String, name: String) -> Unit)? = null,
     onRenameEntry: ((id: Long, name: String) -> Unit)? = null,
+    onLogMeal: ((mealId: String, date: LocalDate, factor: Double) -> Unit)? = null,
+    onLogEntry: ((id: Long, date: LocalDate, factor: Double) -> Unit)? = null,
 ) {
     val displayItems = remember(foods) { foods.toDisplayItems() }
     val expandedState = remember { mutableStateMapOf<String, Boolean>() }
@@ -180,6 +194,67 @@ internal fun FoodEntryList(
         )
     }
 
+    // Dialog state for "Log" (date-pick then scale-factor) prompt — shared by group and standalone.
+    var loggingMealId by remember { mutableStateOf<String?>(null) }
+    var loggingEntryId by remember { mutableStateOf<Long?>(null) }
+    var showLogDatePicker by remember { mutableStateOf(false) }
+    var logTargetDate by remember { mutableStateOf<LocalDate?>(null) }
+    val today = remember { LocalDate.now() }
+
+    fun clearLogState() {
+        loggingMealId = null
+        loggingEntryId = null
+        showLogDatePicker = false
+        logTargetDate = null
+    }
+
+    if (showLogDatePicker) {
+        val datePickerState = rememberDatePickerState(
+            initialSelectedDateMillis = today.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
+            selectableDates = object : SelectableDates {
+                override fun isSelectableDate(utcTimeMillis: Long): Boolean {
+                    val date = Instant.ofEpochMilli(utcTimeMillis)
+                        .atZone(ZoneOffset.UTC).toLocalDate()
+                    return !date.isAfter(today)
+                }
+            },
+        )
+        DatePickerDialog(
+            onDismissRequest = { clearLogState() },
+            confirmButton = {
+                TextButton(onClick = {
+                    datePickerState.selectedDateMillis?.let { millis ->
+                        logTargetDate = Instant.ofEpochMilli(millis)
+                            .atZone(ZoneOffset.UTC).toLocalDate()
+                        showLogDatePicker = false
+                    }
+                }) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { clearLogState() }) { Text("Cancel") }
+            },
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
+
+    if (logTargetDate != null && loggingMealId != null) {
+        val mid = loggingMealId!!
+        val date = logTargetDate!!
+        MealMultiplierDialog(
+            onConfirm = { factor -> onLogMeal?.invoke(mid, date, factor); clearLogState() },
+            onDismiss = { clearLogState() },
+        )
+    }
+    if (logTargetDate != null && loggingEntryId != null) {
+        val eid = loggingEntryId!!
+        val date = logTargetDate!!
+        MealMultiplierDialog(
+            onConfirm = { factor -> onLogEntry?.invoke(eid, date, factor); clearLogState() },
+            onDismiss = { clearLogState() },
+        )
+    }
+
     if (foods.isEmpty()) {
         Text(
             "No food logged yet",
@@ -223,6 +298,14 @@ internal fun FoodEntryList(
                             saveName = ""
                         }) {
                             Text("Save")
+                        }
+                    }
+                    if (onLogEntry != null) {
+                        TextButton(onClick = {
+                            loggingEntryId = displayItem.entry.id
+                            showLogDatePicker = true
+                        }) {
+                            Text("Log")
                         }
                     }
                     if (onRepeatEntry != null) {
@@ -271,6 +354,14 @@ internal fun FoodEntryList(
                                 saveName = ""
                             }) {
                                 Text("Save")
+                            }
+                        }
+                        if (onLogMeal != null) {
+                            TextButton(onClick = {
+                                loggingMealId = displayItem.mealId
+                                showLogDatePicker = true
+                            }) {
+                                Text("Log")
                             }
                         }
                         if (onRepeatMeal != null) {

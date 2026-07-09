@@ -62,6 +62,20 @@ class FoodHistoryViewModel(private val repo: TdeeRepository) : ViewModel() {
         }
     }
 
+    fun logMealToDate(mealId: String, date: LocalDate, factor: Double) {
+        viewModelScope.launch {
+            repo.repeatMeal(mealId, targetDate = date, factor = factor)
+            load()
+        }
+    }
+
+    fun logEntryToDate(id: Long, date: LocalDate, factor: Double) {
+        viewModelScope.launch {
+            repo.repeatEntry(id, targetDate = date, factor = factor)
+            load()
+        }
+    }
+
     fun renameMeal(mealId: String, name: String) {
         viewModelScope.launch {
             repo.renameMeal(mealId, name)
