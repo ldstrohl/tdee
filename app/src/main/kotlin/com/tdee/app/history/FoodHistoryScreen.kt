@@ -116,6 +116,8 @@ fun FoodHistoryScreen(
                     onDeleteMeal = { viewModel.deleteMeal(it) },
                     onRepeatMeal = { mealId, factor -> viewModel.repeatMeal(mealId, factor) },
                     onRepeatEntry = { id, factor -> viewModel.repeatEntry(id, factor) },
+                    onRenameMeal = { mealId, name -> viewModel.renameMeal(mealId, name) },
+                    onRenameEntry = { id, name -> viewModel.renameEntry(id, name) },
                 )
             }
         }

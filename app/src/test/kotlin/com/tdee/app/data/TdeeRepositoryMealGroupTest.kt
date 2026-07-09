@@ -306,6 +306,78 @@ class TdeeRepositoryMealGroupTest {
     }
 
     // -----------------------------------------------------------------------
+    // renameMeal / renameFood
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `renameMeal stamps the new name on every row of the group`() = runTest {
+        val mealId = repo.addFoodGroup(
+            listOf(
+                NewFoodItem("Apple", 95.0, 0.5, 0.3, 25.0, null),
+                NewFoodItem("Banana", 105.0, 1.3, 0.4, 27.0, null),
+            ),
+            mealName = "Breakfast",
+        )
+
+        repo.renameMeal(mealId, "Brunch")
+
+        val entries = db.foodEntryDao().getActive(userId)
+        assertEquals(2, entries.size)
+        assertTrue(entries.all { it.mealName == "Brunch" })
+        assertTrue(entries.all { it.updatedAt == fixedNow })
+    }
+
+    @Test
+    fun `renameMeal names a group that had no name`() = runTest {
+        val mealId = repo.addFoodGroup(
+            listOf(NewFoodItem("Oats", 300.0, 10.0, 5.0, 55.0, null)),
+        )
+
+        repo.renameMeal(mealId, "Morning oats")
+
+        assertEquals("Morning oats", db.foodEntryDao().getActive(userId).first().mealName)
+    }
+
+    @Test
+    fun `renameMeal does not affect other groups`() = runTest {
+        val mealId1 = repo.addFoodGroup(
+            listOf(NewFoodItem("Apple", 95.0, 0.5, 0.3, 25.0, null)),
+            mealName = "Breakfast",
+        )
+        repo.addFoodGroup(
+            listOf(NewFoodItem("Chicken", 250.0, 30.0, 5.0, 0.0, null)),
+            mealName = "Lunch",
+        )
+
+        repo.renameMeal(mealId1, "Brunch")
+
+        val names = db.foodEntryDao().getActive(userId).map { it.mealName }.toSet()
+        assertEquals(setOf("Brunch", "Lunch"), names)
+    }
+
+    @Test
+    fun `renameFood changes only the name and bumps updatedAt`() = runTest {
+        repo.addFoodGroup(listOf(NewFoodItem("Apple", 95.0, 0.5, 0.3, 25.0, null)))
+        val original = db.foodEntryDao().getActive(userId).first()
+
+        repo.renameFood(original.id, "Green apple")
+
+        val updated = db.foodEntryDao().getById(original.id)!!
+        assertEquals("Green apple", updated.name)
+        assertEquals(original.kcal, updated.kcal, 0.001)
+        assertEquals(original.proteinG, updated.proteinG, 0.001)
+        assertEquals(original.mealId, updated.mealId)
+        assertEquals(original.rawText, updated.rawText)
+        assertEquals(fixedNow, updated.updatedAt)
+    }
+
+    @Test
+    fun `renameFood is a no-op for unknown id`() = runTest {
+        repo.renameFood(9999L, "x")
+        assertTrue(db.foodEntryDao().getActive(userId).isEmpty())
+    }
+
+    // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
 

@@ -1,6 +1,7 @@
 package com.tdee.app.dashboard
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -59,7 +60,11 @@ internal fun List<FoodEntryEntity>.toDisplayItems(): List<FoodDisplayItem> {
  * and standalone rows; tapping it opens [MealMultiplierDialog] and calls back with the chosen
  * scale factor. When [onSaveMeal]/[onSaveEntry] are non-null, a "Save" action appears on group
  * headers / standalone rows respectively that opens a name dialog before calling back.
+ *
+ * When [onRenameMeal]/[onRenameEntry] are non-null, long-pressing a group header or an entry
+ * row opens a rename dialog pre-filled with the current name.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun FoodEntryList(
     foods: List<FoodEntryEntity>,
@@ -70,6 +75,8 @@ internal fun FoodEntryList(
     onRepeatEntry: ((id: Long, factor: Double) -> Unit)? = null,
     onSaveMeal: ((mealId: String, name: String) -> Unit)? = null,
     onSaveEntry: ((entryId: Long, name: String) -> Unit)? = null,
+    onRenameMeal: ((mealId: String, name: String) -> Unit)? = null,
+    onRenameEntry: ((id: Long, name: String) -> Unit)? = null,
 ) {
     val displayItems = remember(foods) { foods.toDisplayItems() }
     val expandedState = remember { mutableStateMapOf<String, Boolean>() }
@@ -114,6 +121,46 @@ internal fun FoodEntryList(
         )
     }
 
+    // Dialog state for "Rename" prompt — shared by group headers and entry rows (long-press).
+    var renamingMealId by remember { mutableStateOf<String?>(null) }
+    var renamingEntryId by remember { mutableStateOf<Long?>(null) }
+    var renameName by remember { mutableStateOf("") }
+
+    if (renamingMealId != null || renamingEntryId != null) {
+        AlertDialog(
+            onDismissRequest = { renamingMealId = null; renamingEntryId = null; renameName = "" },
+            title = { Text(if (renamingMealId != null) "Rename meal" else "Rename item") },
+            text = {
+                OutlinedTextField(
+                    value = renameName,
+                    onValueChange = { renameName = it },
+                    label = { Text("Name") },
+                    singleLine = true,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val n = renameName.trim()
+                        if (n.isNotBlank()) {
+                            renamingMealId?.let { onRenameMeal?.invoke(it, n) }
+                            renamingEntryId?.let { onRenameEntry?.invoke(it, n) }
+                        }
+                        renamingMealId = null
+                        renamingEntryId = null
+                        renameName = ""
+                    },
+                    enabled = renameName.isNotBlank(),
+                ) { Text("Rename") }
+            },
+            dismissButton = {
+                TextButton(onClick = { renamingMealId = null; renamingEntryId = null; renameName = "" }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
+
     // Dialog state for "Repeat" scale-factor prompt — shared by group and standalone repeats.
     var repeatingMealId by remember { mutableStateOf<String?>(null) }
     var repeatingEntryId by remember { mutableStateOf<Long?>(null) }
@@ -149,7 +196,15 @@ internal fun FoodEntryList(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { onEditFood(displayItem.entry.id) }
+                        .combinedClickable(
+                            onClick = { onEditFood(displayItem.entry.id) },
+                            onLongClick = onRenameEntry?.let {
+                                {
+                                    renamingEntryId = displayItem.entry.id
+                                    renameName = displayItem.entry.name
+                                }
+                            },
+                        )
                         .padding(vertical = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
@@ -187,9 +242,15 @@ internal fun FoodEntryList(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable {
-                            expandedState[displayItem.mealId] = !isExpanded
-                        }
+                        .combinedClickable(
+                            onClick = { expandedState[displayItem.mealId] = !isExpanded },
+                            onLongClick = onRenameMeal?.let {
+                                {
+                                    renamingMealId = displayItem.mealId
+                                    renameName = displayItem.mealName.orEmpty()
+                                }
+                            },
+                        )
                         .padding(vertical = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
@@ -228,7 +289,15 @@ internal fun FoodEntryList(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(start = 16.dp)
-                                .clickable { onEditFood(entry.id) }
+                                .combinedClickable(
+                                    onClick = { onEditFood(entry.id) },
+                                    onLongClick = onRenameEntry?.let {
+                                        {
+                                            renamingEntryId = entry.id
+                                            renameName = entry.name
+                                        }
+                                    },
+                                )
                                 .padding(vertical = 4.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically,

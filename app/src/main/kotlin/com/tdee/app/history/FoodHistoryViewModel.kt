@@ -62,6 +62,20 @@ class FoodHistoryViewModel(private val repo: TdeeRepository) : ViewModel() {
         }
     }
 
+    fun renameMeal(mealId: String, name: String) {
+        viewModelScope.launch {
+            repo.renameMeal(mealId, name)
+            load()
+        }
+    }
+
+    fun renameEntry(id: Long, name: String) {
+        viewModelScope.launch {
+            repo.renameFood(id, name)
+            load()
+        }
+    }
+
     fun editFood(id: Long) {
         // Navigation is handled in the composable via callback.
     }
