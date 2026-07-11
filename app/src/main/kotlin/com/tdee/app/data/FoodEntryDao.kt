@@ -92,4 +92,12 @@ interface FoodEntryDao {
         "ORDER BY timestamp ASC"
     )
     suspend fun getByMeal(userId: String, mealId: String): List<FoodEntryEntity>
+
+    /** Reactive mirror of [getByMeal]. */
+    @Query(
+        "SELECT * FROM food_entry " +
+        "WHERE userId = :userId AND mealId = :mealId AND deletedAt IS NULL " +
+        "ORDER BY timestamp ASC"
+    )
+    fun observeByMeal(userId: String, mealId: String): Flow<List<FoodEntryEntity>>
 }

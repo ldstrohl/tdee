@@ -858,6 +858,61 @@ class TdeeRepository(
             )
         }
 
+    /**
+     * Returns the non-deleted food entries belonging to [mealId] for the current user.
+     */
+    suspend fun mealEntries(mealId: String): List<FoodEntryEntity> = withContext(Dispatchers.IO) {
+        foodDao.getByMeal(currentUser.userId(), mealId)
+    }
+
+    /**
+     * Reactive mirror of [mealEntries].
+     */
+    fun observeMealEntries(mealId: String): Flow<List<FoodEntryEntity>> =
+        foodDao.observeByMeal(currentUser.userId(), mealId)
+
+    /**
+     * Scales the already-logged amounts of every entry in [mealId] by [factor] in place (same
+     * ids, timestamps, and meal grouping — this is not [repeatMeal], which creates new entries).
+     * [FoodEntryEntity.grams] uses `0.0` as the "unknown" sentinel, which multiplication preserves.
+     * Empty meal is a no-op.
+     */
+    suspend fun scaleMeal(mealId: String, factor: Double) = withContext(Dispatchers.IO) {
+        val uid = currentUser.userId()
+        val entries = foodDao.getByMeal(uid, mealId)
+        entries.forEach { entry ->
+            foodDao.update(
+                entry.copy(
+                    kcal = entry.kcal * factor,
+                    proteinG = entry.proteinG * factor,
+                    fatG = entry.fatG * factor,
+                    carbG = entry.carbG * factor,
+                    grams = entry.grams * factor,
+                    updatedAt = clock.instant(),
+                )
+            )
+        }
+    }
+
+    /**
+     * Scales the already-logged amounts of the food entry with [id] by [factor] in place. No-op
+     * if the entry doesn't exist. [FoodEntryEntity.grams] uses `0.0` as the "unknown" sentinel,
+     * which multiplication preserves.
+     */
+    suspend fun scaleFood(id: Long, factor: Double) = withContext(Dispatchers.IO) {
+        val existing = foodDao.getById(id) ?: return@withContext
+        foodDao.update(
+            existing.copy(
+                kcal = existing.kcal * factor,
+                proteinG = existing.proteinG * factor,
+                fatG = existing.fatG * factor,
+                carbG = existing.carbG * factor,
+                grams = existing.grams * factor,
+                updatedAt = clock.instant(),
+            )
+        )
+    }
+
     // -----------------------------------------------------------------------
     // Weight logging
     // -----------------------------------------------------------------------
