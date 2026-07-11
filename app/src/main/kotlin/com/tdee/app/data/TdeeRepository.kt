@@ -586,6 +586,23 @@ class TdeeRepository(
     }
 
     /**
+     * Renames the food entry with [id]. No-op if the entry doesn't exist.
+     * Only [FoodEntryEntity.name] changes; bumps [FoodEntryEntity.updatedAt].
+     */
+    suspend fun renameFood(id: Long, name: String) = withContext(Dispatchers.IO) {
+        val existing = foodDao.getById(id) ?: return@withContext
+        foodDao.update(existing.copy(name = name, updatedAt = clock.instant()))
+    }
+
+    /**
+     * Renames the meal group [mealId] for the current user by stamping the new
+     * [FoodEntryEntity.mealName] onto every row of the group.
+     */
+    suspend fun renameMeal(mealId: String, name: String) = withContext(Dispatchers.IO) {
+        foodDao.renameMeal(currentUser.userId(), mealId, name, clock.instant())
+    }
+
+    /**
      * Soft-deletes all food entries belonging to [mealId] for the current user.
      */
     suspend fun softDeleteMeal(mealId: String) = withContext(Dispatchers.IO) {

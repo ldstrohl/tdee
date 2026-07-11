@@ -156,6 +156,14 @@ class DashboardViewModel(
         viewModelScope.launch { repo.saveMealFromEntry(name, entryId) }
     }
 
+    fun renameMeal(mealId: String, name: String) {
+        viewModelScope.launch { repo.renameMeal(mealId, name) }
+    }
+
+    fun renameFood(id: Long, name: String) {
+        viewModelScope.launch { repo.renameFood(id, name) }
+    }
+
     // -----------------------------------------------------------------------
     // Date navigation
     // -----------------------------------------------------------------------

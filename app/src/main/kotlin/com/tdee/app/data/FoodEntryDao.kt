@@ -68,6 +68,13 @@ interface FoodEntryDao {
     @Query("UPDATE food_entry SET deletedAt = :deletedAt WHERE userId = :userId AND mealId = :mealId")
     suspend fun softDeleteByMeal(userId: String, mealId: String, deletedAt: Instant)
 
+    /** Rename a meal group — mealName is denormalized onto every row of the group. */
+    @Query(
+        "UPDATE food_entry SET mealName = :name, updatedAt = :updatedAt " +
+        "WHERE userId = :userId AND mealId = :mealId"
+    )
+    suspend fun renameMeal(userId: String, mealId: String, name: String, updatedAt: Instant)
+
     @Query("DELETE FROM food_entry WHERE id = :id")
     suspend fun hardDeleteById(id: Long)
 
