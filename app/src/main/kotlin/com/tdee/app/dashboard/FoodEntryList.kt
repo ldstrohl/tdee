@@ -26,6 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tdee.app.data.FoodEntryEntity
 import com.tdee.app.ui.MealMultiplierDialog
@@ -69,8 +70,8 @@ internal fun List<FoodEntryEntity>.toDisplayItems(): List<FoodDisplayItem> {
  * scale factor. When [onSaveMeal]/[onSaveEntry] are non-null, a "Save" action appears on group
  * headers / standalone rows respectively that opens a name dialog before calling back.
  *
- * When [onRenameMeal]/[onRenameEntry] are non-null, long-pressing a group header or an entry
- * row opens a rename dialog pre-filled with the current name.
+ * Long-pressing a group header or an entry row opens an action menu (Rename / Save / Remove
+ * or Delete, depending on which callbacks are non-null) instead of acting directly.
  *
  * When [onLogMeal]/[onLogEntry] are non-null, a "Log" action appears on group headers /
  * standalone rows that opens a date picker (future dates disabled) then [MealMultiplierDialog],
@@ -178,6 +179,94 @@ internal fun FoodEntryList(
         )
     }
 
+    // Dialog state for the long-press action menu — shared by group headers and entry rows.
+    var actionsMealId by remember { mutableStateOf<String?>(null) }
+    var actionsMealName by remember { mutableStateOf("") }
+    var actionsEntryId by remember { mutableStateOf<Long?>(null) }
+    var actionsEntryName by remember { mutableStateOf("") }
+
+    if (actionsMealId != null) {
+        val mid = actionsMealId!!
+        AlertDialog(
+            onDismissRequest = { actionsMealId = null },
+            title = { Text(actionsMealName.ifBlank { "Meal" }, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            text = {
+                Column {
+                    if (onRenameMeal != null) {
+                        TextButton(
+                            onClick = {
+                                renamingMealId = mid
+                                renameName = actionsMealName
+                                actionsMealId = null
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Rename") }
+                    }
+                    if (onSaveMeal != null) {
+                        TextButton(
+                            onClick = {
+                                savingMealId = mid
+                                saveName = ""
+                                actionsMealId = null
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Save as meal") }
+                    }
+                    TextButton(
+                        onClick = {
+                            onDeleteMeal(mid)
+                            actionsMealId = null
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Remove meal", color = MaterialTheme.colorScheme.error) }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { actionsMealId = null }) { Text("Cancel") } },
+        )
+    }
+
+    if (actionsEntryId != null) {
+        val eid = actionsEntryId!!
+        AlertDialog(
+            onDismissRequest = { actionsEntryId = null },
+            title = { Text(actionsEntryName.ifBlank { "Item" }, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            text = {
+                Column {
+                    if (onRenameEntry != null) {
+                        TextButton(
+                            onClick = {
+                                renamingEntryId = eid
+                                renameName = actionsEntryName
+                                actionsEntryId = null
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Rename") }
+                    }
+                    if (onSaveEntry != null) {
+                        TextButton(
+                            onClick = {
+                                savingEntryId = eid
+                                saveName = ""
+                                actionsEntryId = null
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Save") }
+                    }
+                    TextButton(
+                        onClick = {
+                            onDeleteEntry(eid)
+                            actionsEntryId = null
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { actionsEntryId = null }) { Text("Cancel") } },
+        )
+    }
+
     // Dialog state for "Repeat" scale-factor prompt — shared by group and standalone repeats.
     var repeatingMealId by remember { mutableStateOf<String?>(null) }
     var repeatingEntryId by remember { mutableStateOf<Long?>(null) }
@@ -276,11 +365,9 @@ internal fun FoodEntryList(
                         .fillMaxWidth()
                         .combinedClickable(
                             onClick = { onEditFood(displayItem.entry.id) },
-                            onLongClick = onRenameEntry?.let {
-                                {
-                                    renamingEntryId = displayItem.entry.id
-                                    renameName = displayItem.entry.name
-                                }
+                            onLongClick = {
+                                actionsEntryId = displayItem.entry.id
+                                actionsEntryName = displayItem.entry.name
                             },
                         )
                         .padding(vertical = 4.dp),
@@ -288,20 +375,17 @@ internal fun FoodEntryList(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(displayItem.entry.name, style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            displayItem.entry.name,
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                         Text(
                             "%,d kcal".format(displayItem.entry.kcal.toInt()),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                    }
-                    if (onSaveEntry != null) {
-                        TextButton(onClick = {
-                            savingEntryId = displayItem.entry.id
-                            saveName = ""
-                        }) {
-                            Text("Save")
-                        }
                     }
                     if (onLogEntry != null) {
                         TextButton(onClick = {
@@ -330,11 +414,9 @@ internal fun FoodEntryList(
                         .fillMaxWidth()
                         .combinedClickable(
                             onClick = { expandedState[displayItem.mealId] = !isExpanded },
-                            onLongClick = onRenameMeal?.let {
-                                {
-                                    renamingMealId = displayItem.mealId
-                                    renameName = displayItem.mealName.orEmpty()
-                                }
+                            onLongClick = {
+                                actionsMealId = displayItem.mealId
+                                actionsMealName = displayItem.mealName.orEmpty()
                             },
                         )
                         .padding(vertical = 4.dp),
@@ -344,6 +426,9 @@ internal fun FoodEntryList(
                     Text(
                         displayItem.mealName ?: "Meal · ${displayItem.items.size} items",
                         style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
                     )
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
@@ -351,14 +436,6 @@ internal fun FoodEntryList(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        if (onSaveMeal != null) {
-                            TextButton(onClick = {
-                                savingMealId = displayItem.mealId
-                                saveName = ""
-                            }) {
-                                Text("Save")
-                            }
-                        }
                         if (onLogMeal != null) {
                             TextButton(onClick = {
                                 loggingMealId = displayItem.mealId
@@ -371,9 +448,6 @@ internal fun FoodEntryList(
                             TextButton(onClick = { repeatingMealId = displayItem.mealId }) {
                                 Text("Repeat")
                             }
-                        }
-                        TextButton(onClick = { onDeleteMeal(displayItem.mealId) }) {
-                            Text("Remove meal", color = MaterialTheme.colorScheme.error)
                         }
                     }
                 }
@@ -390,11 +464,9 @@ internal fun FoodEntryList(
                                 .padding(start = 16.dp)
                                 .combinedClickable(
                                     onClick = { onEditFood(entry.id) },
-                                    onLongClick = onRenameEntry?.let {
-                                        {
-                                            renamingEntryId = entry.id
-                                            renameName = entry.name
-                                        }
+                                    onLongClick = {
+                                        actionsEntryId = entry.id
+                                        actionsEntryName = entry.name
                                     },
                                 )
                                 .padding(vertical = 4.dp),
@@ -402,7 +474,12 @@ internal fun FoodEntryList(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(entry.name, style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    entry.name,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
                                 Text(
                                     "%,d kcal".format(entry.kcal.toInt()),
                                     style = MaterialTheme.typography.bodySmall,
