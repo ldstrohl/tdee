@@ -35,8 +35,6 @@ import com.tdee.app.editmeal.EditMealScreen
 import com.tdee.app.editmeal.EditMealViewModel
 import com.tdee.app.editprofile.EditProfileScreen
 import com.tdee.app.editprofile.EditProfileViewModel
-import com.tdee.app.history.FoodHistoryScreen
-import com.tdee.app.history.FoodHistoryViewModel
 import com.tdee.app.insights.ChartDetailScreen
 import com.tdee.app.insights.ChartType
 import com.tdee.app.insights.HelpScreen
@@ -112,7 +110,6 @@ class MainActivity : ComponentActivity() {
                                         onCheckin = { navController.navigate("checkin") },
                                         onEditFood = { id -> navController.navigate("edit_food/$id") },
                                         onSavedMeals = { date -> navController.navigate("saved_meals?date=$date") },
-                                        onFoodHistory = { navController.navigate("food_history") },
                                         onOpenChart = { type -> navController.navigate("chart_detail/${type.name}") },
                                         onEditMeal = { mealId -> navController.navigate("edit_meal/$mealId") },
                                     )
@@ -307,16 +304,6 @@ class MainActivity : ComponentActivity() {
                                     SavedMealsScreen(
                                         viewModel = vm,
                                         onBack = { navController.popBackStack() },
-                                    )
-                                }
-
-                                composable("food_history") {
-                                    val vm: FoodHistoryViewModel =
-                                        viewModel(factory = FoodHistoryViewModel.Factory)
-                                    FoodHistoryScreen(
-                                        viewModel = vm,
-                                        onBack = { navController.popBackStack() },
-                                        onEditFood = { id -> navController.navigate("edit_food/$id") },
                                     )
                                 }
                             }
