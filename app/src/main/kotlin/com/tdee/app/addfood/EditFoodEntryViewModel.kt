@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.time.LocalDate
 
 data class EditFoodEntryState(
     val name: String = "",
@@ -39,6 +40,10 @@ class EditFoodEntryViewModel(
     private val _saved = MutableStateFlow(false)
     /** Flips to true after a successful save. Observe to navigate away. */
     val saved: StateFlow<Boolean> = _saved.asStateFlow()
+
+    private val _loggedToDate = MutableStateFlow<LocalDate?>(null)
+    /** Set to the target date after a successful "log to another day"; drives a confirmation label. */
+    val loggedToDate: StateFlow<LocalDate?> = _loggedToDate.asStateFlow()
 
     init {
         viewModelScope.launch {
@@ -76,6 +81,14 @@ class EditFoodEntryViewModel(
                 grams = s.grams.toDoubleOrNull()?.takeIf { v -> v >= 0 },
             )
             _saved.value = true
+        }
+    }
+
+    /** Re-logs the STORED entry (not unsaved form edits) as a standalone copy on [date], scaled by [factor]. */
+    fun logToDate(date: LocalDate, factor: Double) {
+        viewModelScope.launch {
+            repo.repeatEntry(foodId, targetDate = date, factor = factor)
+            _loggedToDate.value = date
         }
     }
 

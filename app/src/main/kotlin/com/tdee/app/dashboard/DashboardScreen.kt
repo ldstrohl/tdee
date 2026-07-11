@@ -49,8 +49,8 @@ fun DashboardScreen(
     onCheckin: () -> Unit = {},
     onEditFood: (Long) -> Unit = {},
     onSavedMeals: (LocalDate) -> Unit = {},
-    onFoodHistory: () -> Unit = {},
     onOpenChart: (ChartType) -> Unit = {},
+    onEditMeal: (String) -> Unit = {},
 ) {
     val state by viewModel.state.collectAsState()
     val dayFoods by viewModel.dayFoods.collectAsState()
@@ -179,9 +179,9 @@ fun DashboardScreen(
             onRenameMeal = { mealId, name -> viewModel.renameMeal(mealId, name) },
             onRenameEntry = { entryId, name -> viewModel.renameFood(entryId, name) },
             onSavedMeals = { onSavedMeals(selectedDate) },
-            onFoodHistory = onFoodHistory,
             onPrevDay = { viewModel.prevDay() },
             onNextDay = { viewModel.nextDay() },
+            onEditMeal = onEditMeal,
         )
 
         // Weight logging entry point
@@ -370,9 +370,9 @@ private fun TodayFoodSection(
     onRenameMeal: (mealId: String, name: String) -> Unit,
     onRenameEntry: (entryId: Long, name: String) -> Unit,
     onSavedMeals: () -> Unit,
-    onFoodHistory: () -> Unit,
     onPrevDay: () -> Unit,
     onNextDay: () -> Unit,
+    onEditMeal: (String) -> Unit,
 ) {
     Card(
         modifier = Modifier
@@ -410,7 +410,6 @@ private fun TodayFoodSection(
                 horizontalArrangement = Arrangement.End,
             ) {
                 TextButton(onClick = onSavedMeals) { Text("Saved meals") }
-                TextButton(onClick = onFoodHistory) { Text("History") }
             }
 
             FoodEntryList(
@@ -422,6 +421,7 @@ private fun TodayFoodSection(
                 onSaveEntry = onSaveEntry,
                 onRenameMeal = onRenameMeal,
                 onRenameEntry = onRenameEntry,
+                onEditMeal = onEditMeal,
             )
         }
     }

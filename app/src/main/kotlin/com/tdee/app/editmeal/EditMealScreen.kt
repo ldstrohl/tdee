@@ -1,35 +1,34 @@
-package com.tdee.app.addfood
+package com.tdee.app.editmeal
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
+import androidx.compose.material3.Card
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tdee.app.ui.MealMultiplierDialog
 import java.time.Instant
@@ -39,21 +38,33 @@ import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun EditFoodEntryScreen(
-    viewModel: EditFoodEntryViewModel,
-    onDone: () -> Unit,
+fun EditMealScreen(
+    viewModel: EditMealViewModel,
+    onBack: () -> Unit,
+    onEditFood: (Long) -> Unit,
 ) {
-    val state by viewModel.state.collectAsState()
-    val saved by viewModel.saved.collectAsState()
+    val entries by viewModel.entries.collectAsState()
     val loggedToDate by viewModel.loggedToDate.collectAsState()
-
-    LaunchedEffect(saved) {
-        if (saved) onDone()
-    }
-
     val today = remember { LocalDate.now() }
+
+    var scalingMeal by remember { mutableStateOf(false) }
+    var scalingItemId by remember { mutableStateOf<Long?>(null) }
     var showLogDatePicker by remember { mutableStateOf(false) }
     var logTargetDate by remember { mutableStateOf<LocalDate?>(null) }
+
+    if (scalingMeal) {
+        MealMultiplierDialog(
+            onConfirm = { factor -> viewModel.scaleMeal(factor); scalingMeal = false },
+            onDismiss = { scalingMeal = false },
+        )
+    }
+    if (scalingItemId != null) {
+        val id = scalingItemId!!
+        MealMultiplierDialog(
+            onConfirm = { factor -> viewModel.scaleItem(id, factor); scalingItemId = null },
+            onDismiss = { scalingItemId = null },
+        )
+    }
 
     if (showLogDatePicker) {
         val datePickerState = rememberDatePickerState(
@@ -85,7 +96,8 @@ fun EditFoodEntryScreen(
         }
     }
 
-    logTargetDate?.let { date ->
+    if (logTargetDate != null) {
+        val date = logTargetDate!!
         MealMultiplierDialog(
             onConfirm = { factor -> viewModel.logToDate(date, factor); logTargetDate = null },
             onDismiss = { logTargetDate = null },
@@ -97,92 +109,71 @@ fun EditFoodEntryScreen(
             .fillMaxSize()
             .statusBarsPadding()
             .verticalScroll(rememberScrollState())
-            .imePadding()
             .padding(horizontal = 16.dp, vertical = 24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text("Edit food", style = MaterialTheme.typography.headlineSmall)
-
-        OutlinedTextField(
-            value = state.name,
-            onValueChange = viewModel::setName,
-            label = { Text("Food name") },
-            singleLine = true,
+        Row(
             modifier = Modifier.fillMaxWidth(),
-        )
-
-        OutlinedTextField(
-            value = state.kcal,
-            onValueChange = viewModel::setKcal,
-            label = { Text("Calories (kcal)") },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-                value = state.proteinG,
-                onValueChange = viewModel::setProteinG,
-                label = { Text("Protein (g)") },
-                placeholder = { Text("0") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                singleLine = true,
-                modifier = Modifier.weight(1f),
-            )
-            OutlinedTextField(
-                value = state.fatG,
-                onValueChange = viewModel::setFatG,
-                label = { Text("Fat (g)") },
-                placeholder = { Text("0") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                singleLine = true,
-                modifier = Modifier.weight(1f),
-            )
-        }
-
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-                value = state.carbG,
-                onValueChange = viewModel::setCarbG,
-                label = { Text("Carbs (g)") },
-                placeholder = { Text("0") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                singleLine = true,
-                modifier = Modifier.weight(1f),
-            )
-            OutlinedTextField(
-                value = state.grams,
-                onValueChange = viewModel::setGrams,
-                label = { Text("Serving (g)") },
-                placeholder = { Text("—") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                singleLine = true,
-                modifier = Modifier.weight(1f),
-            )
-        }
-
-        Button(
-            onClick = viewModel::save,
-            enabled = state.canSave,
-            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("Save")
-        }
-
-        TextButton(
-            onClick = { showLogDatePicker = true },
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text("Log to another day")
-        }
-
-        loggedToDate?.let { date ->
             Text(
-                "Logged to " + date.format(DateTimeFormatter.ofPattern("MMM d, yyyy")),
+                entries.firstOrNull()?.mealName ?: "Meal",
+                style = MaterialTheme.typography.headlineSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = onBack) { Text("Back") }
+        }
+
+        Text(
+            "%,d kcal".format(entries.sumOf { it.kcal }.toInt()),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(onClick = { scalingMeal = true }) { Text("Scale meal") }
+            TextButton(onClick = { showLogDatePicker = true }) { Text("Log to another day") }
+        }
+        loggedToDate?.let {
+            Text(
+                "Logged to " + it.format(DateTimeFormatter.ofPattern("MMM d, yyyy")),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                entries.forEachIndexed { index, entry ->
+                    if (index > 0) HorizontalDivider()
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onEditFood(entry.id) }
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                entry.name,
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                "%,d kcal".format(entry.kcal.toInt()),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        TextButton(onClick = { scalingItemId = entry.id }) { Text("Scale") }
+                    }
+                }
+            }
         }
     }
 }
