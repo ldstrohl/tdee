@@ -75,6 +75,8 @@ internal fun List<FoodEntryEntity>.toDisplayItems(): List<FoodDisplayItem> {
  * When [onLogMeal]/[onLogEntry] are non-null, a "Log" action appears on group headers /
  * standalone rows that opens a date picker (future dates disabled) then [MealMultiplierDialog],
  * and calls back with the chosen date and scale factor.
+ *
+ * When [onEditMeal] is non-null, an expanded group shows an "Edit meal" action above its items.
  */
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -91,6 +93,7 @@ internal fun FoodEntryList(
     onRenameEntry: ((id: Long, name: String) -> Unit)? = null,
     onLogMeal: ((mealId: String, date: LocalDate, factor: Double) -> Unit)? = null,
     onLogEntry: ((id: Long, date: LocalDate, factor: Double) -> Unit)? = null,
+    onEditMeal: ((String) -> Unit)? = null,
 ) {
     val displayItems = remember(foods) { foods.toDisplayItems() }
     val expandedState = remember { mutableStateMapOf<String, Boolean>() }
@@ -375,6 +378,11 @@ internal fun FoodEntryList(
                     }
                 }
                 if (isExpanded) {
+                    if (onEditMeal != null) {
+                        Row(modifier = Modifier.fillMaxWidth().padding(start = 16.dp)) {
+                            TextButton(onClick = { onEditMeal(displayItem.mealId) }) { Text("Edit meal") }
+                        }
+                    }
                     displayItem.items.forEach { entry ->
                         Row(
                             modifier = Modifier

@@ -51,6 +51,7 @@ fun DashboardScreen(
     onSavedMeals: (LocalDate) -> Unit = {},
     onFoodHistory: () -> Unit = {},
     onOpenChart: (ChartType) -> Unit = {},
+    onEditMeal: (String) -> Unit = {},
 ) {
     val state by viewModel.state.collectAsState()
     val dayFoods by viewModel.dayFoods.collectAsState()
@@ -182,6 +183,7 @@ fun DashboardScreen(
             onFoodHistory = onFoodHistory,
             onPrevDay = { viewModel.prevDay() },
             onNextDay = { viewModel.nextDay() },
+            onEditMeal = onEditMeal,
         )
 
         // Weight logging entry point
@@ -373,6 +375,7 @@ private fun TodayFoodSection(
     onFoodHistory: () -> Unit,
     onPrevDay: () -> Unit,
     onNextDay: () -> Unit,
+    onEditMeal: (String) -> Unit,
 ) {
     Card(
         modifier = Modifier
@@ -422,6 +425,7 @@ private fun TodayFoodSection(
                 onSaveEntry = onSaveEntry,
                 onRenameMeal = onRenameMeal,
                 onRenameEntry = onRenameEntry,
+                onEditMeal = onEditMeal,
             )
         }
     }
