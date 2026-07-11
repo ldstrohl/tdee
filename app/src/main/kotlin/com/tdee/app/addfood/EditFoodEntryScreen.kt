@@ -12,17 +12,32 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.tdee.app.ui.MealMultiplierDialog
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditFoodEntryScreen(
     viewModel: EditFoodEntryViewModel,
@@ -30,9 +45,51 @@ fun EditFoodEntryScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val saved by viewModel.saved.collectAsState()
+    val loggedToDate by viewModel.loggedToDate.collectAsState()
 
     LaunchedEffect(saved) {
         if (saved) onDone()
+    }
+
+    val today = remember { LocalDate.now() }
+    var showLogDatePicker by remember { mutableStateOf(false) }
+    var logTargetDate by remember { mutableStateOf<LocalDate?>(null) }
+
+    if (showLogDatePicker) {
+        val datePickerState = rememberDatePickerState(
+            initialSelectedDateMillis = today.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
+            selectableDates = object : SelectableDates {
+                override fun isSelectableDate(utcTimeMillis: Long): Boolean {
+                    val date = Instant.ofEpochMilli(utcTimeMillis)
+                        .atZone(ZoneOffset.UTC).toLocalDate()
+                    return !date.isAfter(today)
+                }
+            },
+        )
+        DatePickerDialog(
+            onDismissRequest = { showLogDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    datePickerState.selectedDateMillis?.let { millis ->
+                        logTargetDate = Instant.ofEpochMilli(millis)
+                            .atZone(ZoneOffset.UTC).toLocalDate()
+                        showLogDatePicker = false
+                    }
+                }) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLogDatePicker = false }) { Text("Cancel") }
+            },
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
+
+    logTargetDate?.let { date ->
+        MealMultiplierDialog(
+            onConfirm = { factor -> viewModel.logToDate(date, factor); logTargetDate = null },
+            onDismiss = { logTargetDate = null },
+        )
     }
 
     Column(
@@ -111,6 +168,21 @@ fun EditFoodEntryScreen(
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text("Save")
+        }
+
+        TextButton(
+            onClick = { showLogDatePicker = true },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Log to another day")
+        }
+
+        loggedToDate?.let { date ->
+            Text(
+                "Logged to " + date.format(DateTimeFormatter.ofPattern("MMM d, yyyy")),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
