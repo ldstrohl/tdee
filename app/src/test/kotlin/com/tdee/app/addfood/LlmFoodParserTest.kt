@@ -9,6 +9,7 @@ import okhttp3.mockwebserver.MockWebServer
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -53,8 +54,19 @@ class LlmFoodParserTest {
         ]}
     """.trimIndent()
 
+    /** Same items, with a mealName included. */
+    private val itemsJsonWithMealName = """
+        {"mealName":"Eggs & oatmeal","items":[
+          {"name":"Scrambled eggs","displayQuantity":2,"unit":"egg","grams":96,"kcal":143,"proteinG":10,"fatG":11,"carbG":2},
+          {"name":"Oatmeal","displayQuantity":1,"unit":"cup","grams":234,"kcal":166,"proteinG":6,"fatG":4,"carbG":28}
+        ]}
+    """.trimIndent()
+
     /** The inner model text, JSON-string-escaped for embedding in a provider envelope. */
     private fun quotedItems() = JSONObject.quote(itemsJson)
+
+    /** The inner model text (with mealName), JSON-string-escaped for embedding in a provider envelope. */
+    private fun quotedItemsWithMealName() = JSONObject.quote(itemsJsonWithMealName)
 
     private fun assertEggsAndOatmeal(result: ParseResult) {
         assertTrue("expected Success, got $result", result is ParseResult.Success)
@@ -112,6 +124,41 @@ class LlmFoodParserTest {
         val recorded = server.takeRequest()
         assertEquals("KEY", recorded.getHeader("x-goog-api-key"))
         assertTrue(recorded.path!!.contains("gemini-2.5-flash:generateContent"))
+    }
+
+    @Test
+    fun `gemini success with mealName maps it onto the Success result`() {
+        val envelope = """{"candidates":[{"content":{"parts":[{"text":${quotedItemsWithMealName()}}]}}]}"""
+        server.enqueue(MockResponse().setBody(envelope).setResponseCode(200))
+
+        val result = runBlocking { geminiAdapter().parse("eggs and oatmeal", "gemini-2.5-flash", "KEY") }
+        assertTrue(result is ParseResult.Success)
+        assertEquals("Eggs & oatmeal", (result as ParseResult.Success).mealName)
+    }
+
+    @Test
+    fun `gemini success without mealName leaves it null`() {
+        val envelope = """{"candidates":[{"content":{"parts":[{"text":${quotedItems()}}]}}]}"""
+        server.enqueue(MockResponse().setBody(envelope).setResponseCode(200))
+
+        val result = runBlocking { geminiAdapter().parse("eggs and oatmeal", "gemini-2.5-flash", "KEY") }
+        assertTrue(result is ParseResult.Success)
+        assertNull((result as ParseResult.Success).mealName)
+    }
+
+    @Test
+    fun `gemini success with blank mealName maps to null`() {
+        val blankMealNameJson = """
+            {"mealName":"","items":[
+              {"name":"Scrambled eggs","displayQuantity":2,"unit":"egg","grams":96,"kcal":143,"proteinG":10,"fatG":11,"carbG":2}
+            ]}
+        """.trimIndent()
+        val envelope = """{"candidates":[{"content":{"parts":[{"text":${JSONObject.quote(blankMealNameJson)}}]}}]}"""
+        server.enqueue(MockResponse().setBody(envelope).setResponseCode(200))
+
+        val result = runBlocking { geminiAdapter().parse("eggs", "gemini-2.5-flash", "KEY") }
+        assertTrue(result is ParseResult.Success)
+        assertNull((result as ParseResult.Success).mealName)
     }
 
     @Test

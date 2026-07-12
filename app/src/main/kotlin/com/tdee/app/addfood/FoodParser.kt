@@ -21,7 +21,7 @@ interface FoodParser {
  * [failure][ParseResult.Failure] carrying a short, user-facing [message][ParseResult.Failure.message].
  */
 sealed interface ParseResult {
-    data class Success(val items: List<ParsedFoodItem>) : ParseResult
+    data class Success(val items: List<ParsedFoodItem>, val mealName: String? = null) : ParseResult
     data class Failure(val kind: ParseErrorKind, val message: String) : ParseResult
 }
 

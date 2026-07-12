@@ -426,4 +426,30 @@ class ParseConfirmViewModelTest {
         assertNull(vm.state.value.parseError)
         assertEquals(2, vm.state.value.items.size)
     }
+
+    // -----------------------------------------------------------------------
+    // Parser-suggested meal name is carried into state
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `parse carries the parser's mealName into state`() = runTest {
+        val named = object : FoodParser {
+            override suspend fun parse(text: String): ParseResult =
+                ParseResult.Success(emptyList(), mealName = "Eggs & oatmeal")
+        }
+        val namedVm = ParseConfirmViewModel(named, repo)
+
+        namedVm.setText("2 eggs and oatmeal")
+        namedVm.parse()
+
+        assertEquals("Eggs & oatmeal", namedVm.state.value.mealName)
+    }
+
+    @Test
+    fun `parse with no mealName leaves state mealName null`() = runTest {
+        vm.setText("2 eggs and oatmeal")
+        vm.parse()
+
+        assertNull(vm.state.value.mealName)
+    }
 }
