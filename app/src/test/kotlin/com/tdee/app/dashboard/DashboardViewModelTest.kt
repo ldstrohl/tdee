@@ -464,6 +464,39 @@ class DashboardViewModelTest {
     }
 
     @Test
+    fun `logMealToDate re-logs the meal's entries onto the target date scaled by factor`() = runTest {
+        // Insert a meal group on today's log-day (2026-06-21) via the repo.
+        val mealId = repo.addFoodGroup(
+            listOf(
+                NewFoodItem("Apple", 95.0, 0.5, 0.3, 25.0, null),
+                NewFoodItem("Banana", 105.0, 1.3, 0.4, 27.0, null),
+            )
+        )
+
+        val vm = DashboardViewModel(repo, fixedDay)
+
+        // Wait for the source meal to appear before re-logging it elsewhere.
+        vm.dayFoods.filter { it.size == 2 }.first()
+
+        val targetDate = day0 // 2026-06-13, already has one seeded entry
+        vm.logMealToDate(mealId, targetDate, 2.0)
+
+        // Navigate to the target date and wait for the newly repeated (scaled) entries
+        // to show up alongside the pre-existing seeded entry (1 + 2 = 3).
+        vm.setSelectedDate(targetDate)
+        val foods = vm.dayFoods
+            .filter { it.size == 3 }
+            .first()
+
+        val repeated = foods.filter { it.name == "Apple" || it.name == "Banana" }
+        assertEquals(2, repeated.size)
+        val apple = repeated.first { it.name == "Apple" }
+        val banana = repeated.first { it.name == "Banana" }
+        assertEquals(190.0, apple.kcal, 0.001) // 95 * 2.0
+        assertEquals(210.0, banana.kcal, 0.001) // 105 * 2.0
+    }
+
+    @Test
     fun `checkinDue is true with no period and false right after a commit`() = runTest {
         // No period yet → due.
         val vmDue = DashboardViewModel(repo)
