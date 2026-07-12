@@ -164,6 +164,10 @@ class DashboardViewModel(
         viewModelScope.launch { repo.renameFood(id, name) }
     }
 
+    fun logMealToDate(mealId: String, date: LocalDate, factor: Double) {
+        viewModelScope.launch { repo.repeatMeal(mealId, targetDate = date, factor = factor) }
+    }
+
     // -----------------------------------------------------------------------
     // Date navigation
     // -----------------------------------------------------------------------

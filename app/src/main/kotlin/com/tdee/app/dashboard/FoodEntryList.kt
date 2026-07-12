@@ -8,11 +8,16 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
@@ -24,6 +29,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tdee.app.data.FoodEntryEntity
+import com.tdee.app.ui.MealMultiplierDialog
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneOffset
 
 // ---------------------------------------------------------------------------
 // Display model
@@ -64,7 +73,7 @@ internal fun List<FoodEntryEntity>.toDisplayItems(): List<FoodDisplayItem> {
  *
  * When [onEditMeal] is non-null, an expanded group shows an "Edit meal" action above its items.
  */
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 internal fun FoodEntryList(
     foods: List<FoodEntryEntity>,
@@ -76,6 +85,7 @@ internal fun FoodEntryList(
     onRenameMeal: ((mealId: String, name: String) -> Unit)? = null,
     onRenameEntry: ((id: Long, name: String) -> Unit)? = null,
     onEditMeal: ((String) -> Unit)? = null,
+    onLogMealToDate: ((mealId: String, date: LocalDate, factor: Double) -> Unit)? = null,
 ) {
     val displayItems = remember(foods) { foods.toDisplayItems() }
     val expandedState = remember { mutableStateMapOf<String, Boolean>() }
@@ -166,6 +176,55 @@ internal fun FoodEntryList(
     var actionsEntryId by remember { mutableStateOf<Long?>(null) }
     var actionsEntryName by remember { mutableStateOf("") }
 
+    // Dialog state for "Log to another day" — date picker, then a multiplier dialog.
+    val today = remember { LocalDate.now() }
+    var loggingMealId by remember { mutableStateOf<String?>(null) }
+    var showLogDatePicker by remember { mutableStateOf(false) }
+    var logTargetDate by remember { mutableStateOf<LocalDate?>(null) }
+
+    if (showLogDatePicker) {
+        val datePickerState = rememberDatePickerState(
+            initialSelectedDateMillis = today.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
+            selectableDates = object : SelectableDates {
+                override fun isSelectableDate(utcTimeMillis: Long): Boolean {
+                    val date = Instant.ofEpochMilli(utcTimeMillis)
+                        .atZone(ZoneOffset.UTC).toLocalDate()
+                    return !date.isAfter(today)
+                }
+            },
+        )
+        DatePickerDialog(
+            onDismissRequest = { showLogDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    datePickerState.selectedDateMillis?.let { millis ->
+                        logTargetDate = Instant.ofEpochMilli(millis)
+                            .atZone(ZoneOffset.UTC).toLocalDate()
+                        showLogDatePicker = false
+                    }
+                }) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLogDatePicker = false }) { Text("Cancel") }
+            },
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
+
+    if (logTargetDate != null && loggingMealId != null) {
+        val date = logTargetDate!!
+        val mid = loggingMealId!!
+        MealMultiplierDialog(
+            onConfirm = { factor ->
+                onLogMealToDate?.invoke(mid, date, factor)
+                logTargetDate = null
+                loggingMealId = null
+            },
+            onDismiss = { logTargetDate = null; loggingMealId = null },
+        )
+    }
+
     if (actionsMealId != null) {
         val mid = actionsMealId!!
         AlertDialog(
@@ -192,6 +251,16 @@ internal fun FoodEntryList(
                             },
                             modifier = Modifier.fillMaxWidth(),
                         ) { Text("Save as meal") }
+                    }
+                    if (onLogMealToDate != null) {
+                        TextButton(
+                            onClick = {
+                                loggingMealId = mid
+                                actionsMealId = null
+                                showLogDatePicker = true
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Log to another day") }
                     }
                     TextButton(
                         onClick = {

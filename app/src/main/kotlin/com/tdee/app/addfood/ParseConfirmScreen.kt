@@ -60,8 +60,15 @@ fun ParseConfirmScreen(
     var showSaveAsMealDialog by remember { mutableStateOf(false) }
     var mealName by remember { mutableStateOf("") }
     var mealNameInput by remember { mutableStateOf(state.text) }
+    var mealNameInputEdited by remember { mutableStateOf(false) }
     LaunchedEffect(state.text) {
-        if (mealNameInput.isBlank() && state.text.isNotBlank()) mealNameInput = state.text
+        if (!mealNameInputEdited && mealNameInput.isBlank() && state.text.isNotBlank()) {
+            mealNameInput = state.text
+        }
+    }
+    LaunchedEffect(state.mealName) {
+        val llmName = state.mealName
+        if (!mealNameInputEdited && !llmName.isNullOrBlank()) mealNameInput = llmName
     }
 
     val datePickerState = rememberDatePickerState(
@@ -235,7 +242,7 @@ fun ParseConfirmScreen(
 
         OutlinedTextField(
             value = mealNameInput,
-            onValueChange = { mealNameInput = it },
+            onValueChange = { mealNameInput = it; mealNameInputEdited = true },
             label = { Text("Meal name") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,

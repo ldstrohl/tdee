@@ -61,6 +61,8 @@ data class ParseConfirmState(
     val parsing: Boolean = false,
     /** Non-null when the last parse failed; shown as a dismissible banner. Cleared on next parse. */
     val parseError: String? = null,
+    /** Meal name suggested by the parser, if any; prefills the meal-name field. */
+    val mealName: String? = null,
 ) {
     /** Save All is enabled when at least one item is valid. Invalid items are skipped on save. */
     val canSave: Boolean get() = items.any { it.isValid }
@@ -144,6 +146,7 @@ class ParseConfirmViewModel(
                         parsing = false,
                         parseError = null,
                         items = result.items.map { p -> EditableFoodItem.from(p) },
+                        mealName = result.mealName,
                     )
                 }
                 is ParseResult.Failure -> _state.update {

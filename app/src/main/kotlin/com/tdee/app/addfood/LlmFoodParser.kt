@@ -275,7 +275,8 @@ private fun parseItems(jsonText: String): ParseResult {
             needsConfirmation = true,
         )
     }
-    return ParseResult.Success(parsed)
+    val mealName = obj.optString("mealName").takeIf { it.isNotBlank() }
+    return ParseResult.Success(parsed, mealName)
 }
 
 /** Trims any prose/markdown fencing around the JSON object (first `{` … last `}`). */
@@ -302,7 +303,8 @@ Rules:
 - If the user names a specific brand or product you do not recognize, estimate from the closest common equivalent of that food type. Never refuse and never return zero for a named food. Keep the user's brand/product name in "name".
 - If the text contains no food, return an empty items array.
 - All numbers must be non-negative. Round to whole numbers.
-Return ONLY JSON of the form {"items":[{"name":"","displayQuantity":0,"unit":"","grams":0,"kcal":0,"proteinG":0,"fatG":0,"carbG":0}]}.
+- Also produce "mealName": a short display name for the whole meal (e.g. "Chicken sandwich & fries"), keeping the user's wording where sensible.
+Return ONLY JSON of the form {"mealName":"","items":[{"name":"","displayQuantity":0,"unit":"","grams":0,"kcal":0,"proteinG":0,"fatG":0,"carbG":0}]}.
 """.trim()
 
 private val ITEM_PROPS = listOf(
@@ -326,8 +328,12 @@ private fun geminiResponseSchema(): JSONObject {
         .put("properties", itemProps)
         .put("required", JSONArray(ITEM_PROPS))
         .put("propertyOrdering", JSONArray(ITEM_PROPS))
+    val properties = JSONObject()
+        .put("mealName", prop("STRING", "Short display name for the whole meal, e.g. 'Chicken sandwich & fries'"))
+        .put("items", JSONObject().put("type", "ARRAY").put("items", itemSchema))
     return JSONObject()
         .put("type", "OBJECT")
-        .put("properties", JSONObject().put("items", JSONObject().put("type", "ARRAY").put("items", itemSchema)))
-        .put("required", JSONArray(listOf("items")))
+        .put("properties", properties)
+        .put("required", JSONArray(listOf("mealName", "items")))
+        .put("propertyOrdering", JSONArray(listOf("mealName", "items")))
 }

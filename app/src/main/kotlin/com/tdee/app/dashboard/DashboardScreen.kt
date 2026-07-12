@@ -182,6 +182,7 @@ fun DashboardScreen(
             onPrevDay = { viewModel.prevDay() },
             onNextDay = { viewModel.nextDay() },
             onEditMeal = onEditMeal,
+            onLogMealToDate = { mealId, date, factor -> viewModel.logMealToDate(mealId, date, factor) },
         )
 
         // Weight logging entry point
@@ -373,6 +374,7 @@ private fun TodayFoodSection(
     onPrevDay: () -> Unit,
     onNextDay: () -> Unit,
     onEditMeal: (String) -> Unit,
+    onLogMealToDate: (mealId: String, date: LocalDate, factor: Double) -> Unit,
 ) {
     Card(
         modifier = Modifier
@@ -422,6 +424,7 @@ private fun TodayFoodSection(
                 onRenameMeal = onRenameMeal,
                 onRenameEntry = onRenameEntry,
                 onEditMeal = onEditMeal,
+                onLogMealToDate = onLogMealToDate,
             )
         }
     }
