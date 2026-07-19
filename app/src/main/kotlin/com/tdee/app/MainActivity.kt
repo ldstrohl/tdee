@@ -44,6 +44,8 @@ import com.tdee.app.onboarding.OnboardingScreen
 import com.tdee.app.onboarding.OnboardingViewModel
 import com.tdee.app.savedmeals.SavedMealsScreen
 import com.tdee.app.savedmeals.SavedMealsViewModel
+import com.tdee.app.search.MealSearchScreen
+import com.tdee.app.search.MealSearchViewModel
 import com.tdee.app.settings.LlmSettingsScreen
 import com.tdee.app.settings.LlmSettingsViewModel
 import com.tdee.app.settings.SettingsRoute
@@ -110,6 +112,7 @@ class MainActivity : ComponentActivity() {
                                         onCheckin = { navController.navigate("checkin") },
                                         onEditFood = { id -> navController.navigate("edit_food/$id") },
                                         onSavedMeals = { date -> navController.navigate("saved_meals?date=$date") },
+                                        onSearchMeals = { date -> navController.navigate("meal_search?date=$date") },
                                         onOpenChart = { type -> navController.navigate("chart_detail/${type.name}") },
                                         onEditMeal = { mealId -> navController.navigate("edit_meal/$mealId") },
                                     )
@@ -302,6 +305,26 @@ class MainActivity : ComponentActivity() {
                                     val vm: SavedMealsViewModel =
                                         viewModel(factory = SavedMealsViewModel.factory(initialDate))
                                     SavedMealsScreen(
+                                        viewModel = vm,
+                                        onBack = { navController.popBackStack() },
+                                    )
+                                }
+
+                                composable(
+                                    route = "meal_search?date={date}",
+                                    arguments = listOf(
+                                        navArgument("date") {
+                                            type = NavType.StringType
+                                            nullable = true
+                                            defaultValue = null
+                                        }
+                                    ),
+                                ) { backStackEntry ->
+                                    val dateArg = backStackEntry.arguments?.getString("date")
+                                    val initialDate = if (dateArg != null) LocalDate.parse(dateArg) else LocalDate.now()
+                                    val vm: MealSearchViewModel =
+                                        viewModel(factory = MealSearchViewModel.factory(initialDate))
+                                    MealSearchScreen(
                                         viewModel = vm,
                                         onBack = { navController.popBackStack() },
                                     )
