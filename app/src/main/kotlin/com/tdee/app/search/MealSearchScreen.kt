@@ -30,6 +30,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.tdee.app.data.MealSearchItem
 import com.tdee.app.data.MealSearchResult
 import com.tdee.app.ui.MealMultiplierDialog
 import java.time.ZoneId
@@ -47,6 +48,8 @@ fun MealSearchScreen(
     val expanded = remember { mutableStateMapOf<String, Boolean>() }
     // Result awaiting a scale-factor pick before logging.
     var logging by remember { mutableStateOf<MealSearchResult?>(null) }
+    // Individual item (within an expanded result) awaiting a scale-factor pick before logging.
+    var loggingItem by remember { mutableStateOf<MealSearchItem?>(null) }
 
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(Unit) { focusRequester.requestFocus() }
@@ -59,6 +62,17 @@ fun MealSearchScreen(
                 logging = null
             },
             onDismiss = { logging = null },
+        )
+    }
+
+    if (loggingItem != null) {
+        val item = loggingItem!!
+        MealMultiplierDialog(
+            onConfirm = { factor ->
+                viewModel.logItem(item, factor)
+                loggingItem = null
+            },
+            onDismiss = { loggingItem = null },
         )
     }
 
@@ -105,8 +119,9 @@ fun MealSearchScreen(
                         result = result,
                         expanded = expanded[result.key] == true,
                         onToggleExpanded = { expanded[result.key] = expanded[result.key] != true },
-                        justLogged = justLogged == result.key,
+                        justLogged = justLogged,
                         onLog = { logging = result },
+                        onLogItem = { item -> loggingItem = item },
                     )
                 }
             }
@@ -119,8 +134,9 @@ private fun MealSearchResultRow(
     result: MealSearchResult,
     expanded: Boolean,
     onToggleExpanded: () -> Unit,
-    justLogged: Boolean,
+    justLogged: String?,
     onLog: () -> Unit,
+    onLogItem: (MealSearchItem) -> Unit,
 ) {
     val sourceLabel = remember(result) {
         when (result) {
@@ -173,7 +189,7 @@ private fun MealSearchResultRow(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    if (justLogged) {
+                    if (justLogged == result.key) {
                         Text(
                             "Added.",
                             style = MaterialTheme.typography.bodySmall,
@@ -194,18 +210,27 @@ private fun MealSearchResultRow(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text(
-                                item.name,
-                                style = MaterialTheme.typography.bodySmall,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f),
-                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    item.name,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                if (justLogged == item.name) {
+                                    Text(
+                                        "Added.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
+                            }
                             Text(
                                 "%,d kcal".format(item.kcal.toInt()),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                            TextButton(onClick = { onLogItem(item) }) { Text("Log") }
                         }
                     }
                 }

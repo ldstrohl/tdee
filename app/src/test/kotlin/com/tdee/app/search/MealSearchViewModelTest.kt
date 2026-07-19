@@ -235,6 +235,34 @@ class MealSearchViewModelTest {
     }
 
     // -----------------------------------------------------------------------
+    // 5b. logItem(item, factor) inserts a standalone copy of the item scaled, onto logDate
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `logItem inserts the item scaled by factor onto logDate and sets justLogged`() = runTest {
+        val item = MealSearchItem("Rice", 200.0, 4.0, 0.5, 44.0, 150.0)
+
+        val vm = MealSearchViewModel(repo, logDate, debounceMillis = 0)
+        assertEquals(null, vm.justLogged.value)
+
+        vm.logItem(item, factor = 1.5)
+
+        val entries = repo.observeFoodEntriesForDate(logDate)
+            .filter { list -> list.any { it.name == "Rice" } }
+            .first()
+        val rice = entries.single { it.name == "Rice" }
+        assertEquals(null, rice.mealId)
+        assertEquals(300.0, rice.kcal, 0.001)
+        assertEquals(6.0, rice.proteinG, 0.001)
+        assertEquals(0.75, rice.fatG, 0.001)
+        assertEquals(66.0, rice.carbG, 0.001)
+        assertEquals(225.0, rice.grams, 0.001)
+
+        val justLogged = vm.justLogged.filter { it != null }.first()
+        assertEquals(item.name, justLogged)
+    }
+
+    // -----------------------------------------------------------------------
     // 6. justLogged becomes the logged result's key
     // -----------------------------------------------------------------------
 

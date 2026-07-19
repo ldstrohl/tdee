@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.tdee.app.TdeeApplication
+import com.tdee.app.data.MealSearchItem
 import com.tdee.app.data.MealSearchResult
 import com.tdee.app.data.TdeeRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -55,6 +56,23 @@ class MealSearchViewModel(
                     repo.repeatEntry(result.entryId, targetDate = logDate, factor = factor)
             }
             justLogged.value = result.key
+        }
+    }
+
+    /** Logs a single item from within a matched meal as a standalone food entry, scaled by [factor]. */
+    fun logItem(item: MealSearchItem, factor: Double) {
+        viewModelScope.launch {
+            repo.addFood(
+                name = item.name,
+                kcal = item.kcal * factor,
+                proteinG = item.proteinG * factor,
+                fatG = item.fatG * factor,
+                carbG = item.carbG * factor,
+                grams = item.grams?.let { it * factor },
+                mealId = null,
+                loggedDate = logDate,
+            )
+            justLogged.value = item.name
         }
     }
 
