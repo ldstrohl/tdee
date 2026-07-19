@@ -49,6 +49,7 @@ fun DashboardScreen(
     onCheckin: () -> Unit = {},
     onEditFood: (Long) -> Unit = {},
     onSavedMeals: (LocalDate) -> Unit = {},
+    onSearchMeals: (LocalDate) -> Unit = {},
     onOpenChart: (ChartType) -> Unit = {},
     onEditMeal: (String) -> Unit = {},
 ) {
@@ -179,6 +180,7 @@ fun DashboardScreen(
             onRenameMeal = { mealId, name -> viewModel.renameMeal(mealId, name) },
             onRenameEntry = { entryId, name -> viewModel.renameFood(entryId, name) },
             onSavedMeals = { onSavedMeals(selectedDate) },
+            onSearchMeals = { onSearchMeals(selectedDate) },
             onPrevDay = { viewModel.prevDay() },
             onNextDay = { viewModel.nextDay() },
             onEditMeal = onEditMeal,
@@ -371,6 +373,7 @@ private fun TodayFoodSection(
     onRenameMeal: (mealId: String, name: String) -> Unit,
     onRenameEntry: (entryId: Long, name: String) -> Unit,
     onSavedMeals: () -> Unit,
+    onSearchMeals: () -> Unit,
     onPrevDay: () -> Unit,
     onNextDay: () -> Unit,
     onEditMeal: (String) -> Unit,
@@ -411,6 +414,7 @@ private fun TodayFoodSection(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
             ) {
+                TextButton(onClick = onSearchMeals) { Text("Search") }
                 TextButton(onClick = onSavedMeals) { Text("Saved meals") }
             }
 

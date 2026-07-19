@@ -782,6 +782,135 @@ class TdeeRepository(
         }
 
     /**
+     * Searches saved meals and previously-logged meals/entries for [query], for use by a
+     * meal-search UI (e.g. an "add from history/saved" picker).
+     *
+     * - Blank [query]: returns ALL saved meals for the current user, newest first (browse default).
+     * - Non-blank [query]: matches saved meals by name or item name; matches logged rows by
+     *   [FoodEntryEntity.name] or [FoodEntryEntity.mealName] (via [FoodEntryDao.searchActive]).
+     *   Logged meal groups are deduped by `mealName` (case-insensitive) when named, else by
+     *   `mealId`, keeping the most recently logged instance as the representative and hydrating
+     *   its full item list. Standalone logged entries are deduped by name, keeping the most recent.
+     *   A logged result whose title exactly matches (case/whitespace-insensitive) a matched saved
+     *   meal's title is suppressed — the saved meal wins.
+     * - Results are ranked by title match quality (prefix > substring > item-only match), then
+     *   saved-before-logged, then most-recent-first, and capped at [limit].
+     */
+    suspend fun searchMeals(query: String, limit: Int = 50): List<MealSearchResult> =
+        withContext(Dispatchers.IO) {
+            val uid = currentUser.userId()
+            val q = query.trim()
+
+            if (q.isBlank()) {
+                return@withContext savedMealDao.getForUser(uid)
+                    .take(limit)
+                    .map { it.toSearchResult() }
+            }
+
+            val savedMealEntities = savedMealDao.getForUser(uid).filter { meal ->
+                meal.name.contains(q, ignoreCase = true) ||
+                    meal.items.any { it.name.contains(q, ignoreCase = true) }
+            }
+            val savedRanked = savedMealEntities.map { RankedResult(it.toSearchResult(), it.createdAt) }
+            val savedTitles = savedRanked.map { it.result.title.trim().lowercase() }.toSet()
+
+            val loggedRows = foodDao.searchActive(uid, likePattern(q), 500)
+            val (groupedRows, standaloneRows) = loggedRows.partition { it.mealId != null }
+
+            // Grouped rows: dedup by mealName (case-insensitive) when named, else by mealId.
+            // Rows arrive timestamp DESC, so the first occurrence per key is the most recent —
+            // that becomes the representative whose full item list we hydrate below.
+            val representativeByKey = LinkedHashMap<String, FoodEntryEntity>()
+            for (row in groupedRows) {
+                val dedupKey = row.mealName?.lowercase() ?: row.mealId!!
+                representativeByKey.putIfAbsent(dedupKey, row)
+            }
+            val representativeMealIds = representativeByKey.values.map { it.mealId!! }.distinct()
+            val hydratedByMealId: Map<String, List<FoodEntryEntity>> = if (representativeMealIds.isEmpty()) {
+                emptyMap()
+            } else {
+                foodDao.getByMeals(uid, representativeMealIds).groupBy { it.mealId!! }
+            }
+            val loggedMealRanked = representativeByKey.values.mapNotNull { rep ->
+                val groupRows = hydratedByMealId[rep.mealId!!]
+                if (groupRows.isNullOrEmpty()) return@mapNotNull null
+                val title = rep.mealName ?: "Meal · ${groupRows.size} items"
+                RankedResult(
+                    MealSearchResult.LoggedMeal(
+                        mealId = rep.mealId!!,
+                        title = title,
+                        items = groupRows.map { it.toSearchItem() },
+                        lastLogged = rep.timestamp,
+                    ),
+                    rep.timestamp,
+                )
+            }
+
+            // Standalone rows: dedup by name (case-insensitive), keeping the most recent.
+            val standaloneByName = LinkedHashMap<String, FoodEntryEntity>()
+            for (row in standaloneRows) {
+                standaloneByName.putIfAbsent(row.name.lowercase(), row)
+            }
+            val loggedEntryRanked = standaloneByName.values.map { row ->
+                RankedResult(
+                    MealSearchResult.LoggedEntry(
+                        entryId = row.id,
+                        title = row.name,
+                        items = listOf(row.toSearchItem()),
+                        lastLogged = row.timestamp,
+                    ),
+                    row.timestamp,
+                )
+            }
+
+            val loggedRanked = (loggedMealRanked + loggedEntryRanked)
+                .filterNot { it.result.title.trim().lowercase() in savedTitles }
+
+            (savedRanked + loggedRanked)
+                .sortedWith(
+                    compareBy<RankedResult> { matchRank(it.result.title, q) }
+                        .thenBy { sectionRank(it.result) }
+                        .thenByDescending { it.recency }
+                )
+                .map { it.result }
+                .take(limit)
+        }
+
+    /** Pairs a [MealSearchResult] with the instant used to break ties in [searchMeals]'s ranking. */
+    private data class RankedResult(val result: MealSearchResult, val recency: Instant)
+
+    private fun matchRank(title: String, q: String): Int = when {
+        title.startsWith(q, ignoreCase = true) -> 0
+        title.contains(q, ignoreCase = true) -> 1
+        else -> 2
+    }
+
+    private fun sectionRank(result: MealSearchResult): Int = when (result) {
+        is MealSearchResult.Saved -> 0
+        is MealSearchResult.LoggedMeal, is MealSearchResult.LoggedEntry -> 1
+    }
+
+    private fun SavedMealEntity.toSearchResult(): MealSearchResult.Saved = MealSearchResult.Saved(
+        savedMealId = id,
+        title = name,
+        items = items.map {
+            MealSearchItem(
+                name = it.name, kcal = it.kcal, proteinG = it.proteinG,
+                fatG = it.fatG, carbG = it.carbG, grams = it.grams,
+            )
+        },
+    )
+
+    private fun FoodEntryEntity.toSearchItem(): MealSearchItem = MealSearchItem(
+        name = name, kcal = kcal, proteinG = proteinG, fatG = fatG, carbG = carbG,
+        grams = grams.takeIf { g -> g > 0 },
+    )
+
+    /** Escapes `\`, `%`, and `_` (in that order) so [query] is matched as a literal `LIKE` substring. */
+    private fun likePattern(q: String): String =
+        "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+
+    /**
      * Reactive stream of non-deleted food entries whose log-day equals [date] for the current user.
      *
      * Room re-emits the list automatically on any food_entry change, so collectors stay
