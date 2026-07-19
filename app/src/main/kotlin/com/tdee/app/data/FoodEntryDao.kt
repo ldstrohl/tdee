@@ -100,4 +100,30 @@ interface FoodEntryDao {
         "ORDER BY timestamp ASC"
     )
     fun observeByMeal(userId: String, mealId: String): Flow<List<FoodEntryEntity>>
+
+    /**
+     * Non-deleted entries for the user whose [FoodEntryEntity.name] or [FoodEntryEntity.mealName]
+     * matches [pattern] (a `LIKE` pattern with `\` as the escape character — see
+     * [TdeeRepository]'s `likePattern` helper), newest first, capped at [limit].
+     * Used by [TdeeRepository.searchMeals].
+     */
+    @Query(
+        "SELECT * FROM food_entry " +
+        "WHERE userId = :userId AND deletedAt IS NULL " +
+        "AND (name LIKE :pattern ESCAPE '\\' OR mealName LIKE :pattern ESCAPE '\\') " +
+        "ORDER BY timestamp DESC LIMIT :limit"
+    )
+    suspend fun searchActive(userId: String, pattern: String, limit: Int): List<FoodEntryEntity>
+
+    /**
+     * Non-deleted entries for the user belonging to any of [mealIds], oldest first within each
+     * group. Used by [TdeeRepository.searchMeals] to hydrate the full item list of the
+     * representative group for each matched meal.
+     */
+    @Query(
+        "SELECT * FROM food_entry " +
+        "WHERE userId = :userId AND mealId IN (:mealIds) AND deletedAt IS NULL " +
+        "ORDER BY timestamp ASC"
+    )
+    suspend fun getByMeals(userId: String, mealIds: List<String>): List<FoodEntryEntity>
 }
