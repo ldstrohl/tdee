@@ -21,4 +21,5 @@ data class SavedMealItem(
     val fatG: Double,
     val carbG: Double,
     val grams: Double?,
+    val factor: Double = 1.0,
 )

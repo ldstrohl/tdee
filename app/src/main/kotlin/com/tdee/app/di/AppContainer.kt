@@ -9,6 +9,7 @@ import com.tdee.app.data.LlmSettingsStore
 import com.tdee.app.data.MIGRATION_2_3
 import com.tdee.app.data.MIGRATION_3_4
 import com.tdee.app.data.MIGRATION_4_5
+import com.tdee.app.data.MIGRATION_5_6
 import com.tdee.app.data.SavedMealDao
 import com.tdee.app.data.FoodEntryDao
 import com.tdee.app.data.HealthConnectSyncManager
@@ -33,7 +34,7 @@ class AppContainer(context: Context) {
 
     val database: AppDatabase by lazy {
         Room.databaseBuilder(appContext, AppDatabase::class.java, "tdee.db")
-            .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
             .build()
     }
 
