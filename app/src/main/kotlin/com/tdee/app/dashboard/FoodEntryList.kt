@@ -43,6 +43,19 @@ internal sealed interface FoodDisplayItem {
     data class Group(val mealId: String, val items: List<FoodEntryEntity>, val mealName: String?) : FoodDisplayItem
 }
 
+/** Formats a scale factor for display, rounding to 2dp to absorb floating-point compounding
+ * error (e.g. 1.1 * 1.3 -> 1.4300000000000002) and trimming trailing zeros
+ * (2.0 -> "2", 1.5 -> "1.5"). */
+internal fun formatFactor(factor: Double): String {
+    val rounded = Math.round(factor * 100) / 100.0
+    return if (rounded == rounded.toLong().toDouble()) rounded.toLong().toString() else rounded.toString()
+}
+
+/** Suffix appended to an entry's displayed name when its stored [FoodEntryEntity.scaleFactor]
+ * differs from 1.0, e.g. " ×2"; empty string when unscaled. */
+private fun FoodEntryEntity.scaleSuffix(): String =
+    if (kotlin.math.abs(scaleFactor - 1.0) > 1e-9) " ×${formatFactor(scaleFactor)}" else ""
+
 internal fun List<FoodEntryEntity>.toDisplayItems(): List<FoodDisplayItem> {
     val seenMeals = mutableSetOf<String>()
     val mealItemsMap = groupBy { it.mealId }.filterKeys { it != null }
@@ -346,7 +359,7 @@ internal fun FoodEntryList(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            displayItem.entry.name,
+                            displayItem.entry.name + displayItem.entry.scaleSuffix(),
                             style = MaterialTheme.typography.bodyMedium,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -419,7 +432,7 @@ internal fun FoodEntryList(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    entry.name,
+                                    entry.name + entry.scaleSuffix(),
                                     style = MaterialTheme.typography.bodyMedium,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,

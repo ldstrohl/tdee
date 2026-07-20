@@ -31,12 +31,14 @@ data class NewFoodItem(
     val fatG: Double,
     val carbG: Double,
     val grams: Double?,
+    val factor: Double = 1.0,
 )
 
 /**
  * Scales [NewFoodItem.kcal], [NewFoodItem.proteinG], [NewFoodItem.fatG], [NewFoodItem.carbG], and
- * (when non-null) [NewFoodItem.grams] by [factor]. [NewFoodItem.name] is unchanged. `factor = 1.0`
- * is an exact no-op.
+ * (when non-null) [NewFoodItem.grams] by [factor]. [NewFoodItem.name] is unchanged.
+ * [NewFoodItem.factor] accumulates (`factor = factor * this factor`), tracking the cumulative
+ * multiplier vs. the item's native single-serving values. `factor = 1.0` is an exact no-op.
  */
 fun NewFoodItem.scaledBy(factor: Double): NewFoodItem = copy(
     kcal = kcal * factor,
@@ -44,6 +46,7 @@ fun NewFoodItem.scaledBy(factor: Double): NewFoodItem = copy(
     fatG = fatG * factor,
     carbG = carbG * factor,
     grams = grams?.let { it * factor },
+    factor = this.factor * factor,
 )
 
 /** Applies [scaledBy] to every item in the list. */
@@ -455,6 +458,8 @@ class TdeeRepository(
      * @param fatG       fat in grams.
      * @param carbG      carbohydrate in grams.
      * @param grams      serving weight in grams; defaults to 0 when not known.
+     * @param factor     cumulative multiplier vs. the item's native single-serving values,
+     *   stored as [FoodEntryEntity.scaleFactor]; defaults to 1.0 (no scaling).
      * @param loggedDate when non-null, backdates the entry so its log-day equals this date.
      *   The timestamp is placed at noon of that day (dayStartHour + 12 hours past midnight in
      *   [zone]), which guarantees [logDay](timestamp) == [loggedDate] for any dayStartHour 0–23.
@@ -469,6 +474,7 @@ class TdeeRepository(
         grams: Double? = null,
         mealId: String? = null,
         loggedDate: LocalDate? = null,
+        factor: Double = 1.0,
     ) = withContext(Dispatchers.IO) {
         val uid = currentUser.userId()
         val profileEntity = profileDao.get(uid)
@@ -495,6 +501,7 @@ class TdeeRepository(
                 carbG = carbG,
                 sourceDb = FoodSourceDb.MANUAL,
                 mealId = mealId,
+                scaleFactor = factor,
                 createdAt = now,
                 updatedAt = now,
             )
@@ -543,12 +550,61 @@ class TdeeRepository(
                     sourceDb = FoodSourceDb.MANUAL,
                     mealId = mealId,
                     mealName = mealName,
+                    scaleFactor = item.factor,
                     createdAt = now,
                     updatedAt = now,
                 )
             }
         )
         mealId
+    }
+
+    /**
+     * Inserts [items] as standalone entries (no meal grouping — `mealId`/`mealName` are null on
+     * every row). Shares the same timestamp logic as [addFoodGroup] (all items get one shared
+     * timestamp; [loggedDate] backdates to noon of that log-day when non-null).
+     *
+     * @param items  the items to insert; an empty list is a no-op.
+     * @param loggedDate  when non-null, backdates entries to that log-day (noon in [zone]).
+     */
+    suspend fun addFoodItems(
+        items: List<NewFoodItem>,
+        loggedDate: LocalDate? = null,
+    ) = withContext(Dispatchers.IO) {
+        if (items.isEmpty()) return@withContext
+        val uid = currentUser.userId()
+        val profileEntity = profileDao.get(uid)
+        val dayStartHour = profileEntity?.dayStartHour ?: 0
+        val now = clock.instant()
+        val timestamp = if (loggedDate != null) {
+            loggedDate.atStartOfDay(zone).toInstant()
+                .plusSeconds((dayStartHour + 12) * 3600L)
+        } else {
+            now
+        }
+        foodDao.insertAll(
+            items.map { item ->
+                FoodEntryEntity(
+                    userId = uid,
+                    timestamp = timestamp,
+                    rawText = item.name,
+                    name = item.name,
+                    quantity = 1.0,
+                    unit = "serving",
+                    grams = item.grams ?: 0.0,
+                    kcal = item.kcal,
+                    proteinG = item.proteinG,
+                    fatG = item.fatG,
+                    carbG = item.carbG,
+                    sourceDb = FoodSourceDb.MANUAL,
+                    mealId = null,
+                    mealName = null,
+                    scaleFactor = item.factor,
+                    createdAt = now,
+                    updatedAt = now,
+                )
+            }
+        )
     }
 
     /** Returns the [FoodEntryEntity] with the given [id], or null if not found. */
@@ -561,6 +617,8 @@ class TdeeRepository(
      * this is a no-op. Preserves [FoodEntryEntity.rawText], [FoodEntryEntity.userId],
      * [FoodEntryEntity.timestamp], [FoodEntryEntity.createdAt], [FoodEntryEntity.mealId],
      * and [FoodEntryEntity.deletedAt]; bumps [FoodEntryEntity.updatedAt] to [clock]'s instant.
+     * Resets [FoodEntryEntity.scaleFactor] to 1.0 — a manual macro edit makes the edited values
+     * the new native serving.
      */
     suspend fun updateFood(
         id: Long,
@@ -580,6 +638,7 @@ class TdeeRepository(
                 fatG = fatG,
                 carbG = carbG,
                 grams = grams ?: existing.grams,
+                scaleFactor = 1.0,
                 updatedAt = clock.instant(),
             )
         )
@@ -694,6 +753,7 @@ class TdeeRepository(
                         SavedMealItem(
                             name = it.name, kcal = it.kcal, proteinG = it.proteinG,
                             fatG = it.fatG, carbG = it.carbG, grams = it.grams,
+                            factor = it.factor,
                         )
                     },
                     createdAt = clock.instant(),
@@ -718,6 +778,7 @@ class TdeeRepository(
                             name = it.name, kcal = it.kcal, proteinG = it.proteinG,
                             fatG = it.fatG, carbG = it.carbG,
                             grams = it.grams.takeIf { g -> g > 0 },
+                            factor = it.scaleFactor,
                         )
                     },
                     createdAt = clock.instant(),
@@ -739,6 +800,7 @@ class TdeeRepository(
                     name = it.name, kcal = it.kcal, proteinG = it.proteinG,
                     fatG = it.fatG, carbG = it.carbG,
                     grams = it.grams.takeIf { g -> g > 0 },
+                    factor = it.scaleFactor,
                 )
             }
             savedMealDao.insert(
@@ -776,6 +838,7 @@ class TdeeRepository(
                 NewFoodItem(
                     name = it.name, kcal = it.kcal, proteinG = it.proteinG,
                     fatG = it.fatG, carbG = it.carbG, grams = it.grams,
+                    factor = it.factor,
                 )
             }.scaledBy(factor)
             addFoodGroup(items, loggedDate, meal.name)
@@ -829,6 +892,7 @@ class TdeeRepository(
                     name = it.name, kcal = it.kcal, proteinG = it.proteinG,
                     fatG = it.fatG, carbG = it.carbG,
                     grams = it.grams.takeIf { g -> g > 0 },
+                    factor = it.scaleFactor,
                 )
             }.scaledBy(factor)
             addFoodGroup(items, targetDate, sourceMealName)
@@ -845,6 +909,7 @@ class TdeeRepository(
                 name = entry.name, kcal = entry.kcal, proteinG = entry.proteinG,
                 fatG = entry.fatG, carbG = entry.carbG,
                 grams = entry.grams.takeIf { it > 0 },
+                factor = entry.scaleFactor,
             ).scaledBy(factor)
             addFood(
                 name = item.name,
@@ -855,6 +920,7 @@ class TdeeRepository(
                 grams = item.grams,
                 mealId = null,
                 loggedDate = targetDate,
+                factor = item.factor,
             )
         }
 

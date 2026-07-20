@@ -20,6 +20,8 @@ data class EditFoodEntryState(
     val fatG: String = "",
     val carbG: String = "",
     val grams: String = "",
+    /** Stored [com.tdee.app.data.FoodEntryEntity.scaleFactor] of the entry being edited. */
+    val scaleFactor: Double = 1.0,
 ) {
     val canSave: Boolean
         get() = name.isNotBlank() && kcal.toDoubleOrNull()?.let { it >= 0 } == true
@@ -55,6 +57,7 @@ class EditFoodEntryViewModel(
                 fatG = if (entry.fatG > 0) entry.fatG.toString() else "",
                 carbG = if (entry.carbG > 0) entry.carbG.toString() else "",
                 grams = if (entry.grams > 0) entry.grams.toString() else "",
+                scaleFactor = entry.scaleFactor,
             )
         }
     }
@@ -84,10 +87,17 @@ class EditFoodEntryViewModel(
         }
     }
 
-    /** Re-logs the STORED entry (not unsaved form edits) as a standalone copy on [date], scaled by [factor]. */
-    fun logToDate(date: LocalDate, factor: Double) {
+    /**
+     * Re-logs the STORED entry (not unsaved form edits) as a standalone copy on [date].
+     * [confirmedFactor] is the ABSOLUTE multiplier vs. the item's original serving (what the
+     * scale dialog shows/confirms); it's converted here to the RELATIVE factor
+     * [TdeeRepository.repeatEntry] expects (relative to the currently stored, already-scaled
+     * values) by dividing by the entry's stored [FoodEntryEntity.scaleFactor].
+     */
+    fun logToDate(date: LocalDate, confirmedFactor: Double) {
         viewModelScope.launch {
-            repo.repeatEntry(foodId, targetDate = date, factor = factor)
+            val relativeFactor = confirmedFactor / _state.value.scaleFactor
+            repo.repeatEntry(foodId, targetDate = date, factor = relativeFactor)
             _loggedToDate.value = date
         }
     }

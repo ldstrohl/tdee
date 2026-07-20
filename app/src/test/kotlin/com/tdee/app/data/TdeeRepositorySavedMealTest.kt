@@ -135,6 +135,29 @@ class TdeeRepositorySavedMealTest {
     }
 
     @Test
+    fun `Converters round-trips SavedMealItem factor`() {
+        val converters = Converters()
+        val items = listOf(
+            SavedMealItem("Oats", 300.0, 10.0, 5.0, 55.0, 80.0, factor = 2.0),
+        )
+
+        val json = converters.fromSavedMealItems(items)
+        val decoded = converters.toSavedMealItems(json)
+
+        assertEquals(2.0, decoded[0].factor, 0.001)
+    }
+
+    @Test
+    fun `Converters decodes legacy JSON without a factor key to factor 1point0`() {
+        val converters = Converters()
+        val legacyJson = """[{"name":"Oats","kcal":300.0,"proteinG":10.0,"fatG":5.0,"carbG":55.0}]"""
+
+        val decoded = converters.toSavedMealItems(legacyJson)
+
+        assertEquals(1.0, decoded[0].factor, 0.001)
+    }
+
+    @Test
     fun `deleteSavedMeal removes the meal`() = runTest {
         val id = repo.saveMeal("ToDelete", listOf(NewFoodItem("X", 100.0, 0.0, 0.0, 0.0, null)))
         repo.deleteSavedMeal(id)
@@ -151,7 +174,7 @@ class TdeeRepositorySavedMealTest {
     fun `saveMealFromGroup snapshots the group's items`() = runTest {
         val mealId = repo.addFoodGroup(
             listOf(
-                NewFoodItem("Rice", 200.0, 4.0, 1.0, 44.0, 150.0),
+                NewFoodItem("Rice", 200.0, 4.0, 1.0, 44.0, 150.0, factor = 2.0),
                 NewFoodItem("Chicken", 250.0, 30.0, 5.0, 0.0, null),
             ),
         )
@@ -164,6 +187,9 @@ class TdeeRepositorySavedMealTest {
         assertEquals(2, meals[0].items.size)
         assertEquals("Rice", meals[0].items[0].name)
         assertEquals("Chicken", meals[0].items[1].name)
+        assertEquals("saveMealFromGroup should snapshot the entity's scaleFactor",
+            2.0, meals[0].items[0].factor, 0.001)
+        assertEquals(1.0, meals[0].items[1].factor, 0.001)
     }
 
     // -----------------------------------------------------------------------
@@ -172,7 +198,8 @@ class TdeeRepositorySavedMealTest {
 
     @Test
     fun `saveMealFromEntry snapshots the standalone entry as a one-item meal`() = runTest {
-        repo.addFood(name = "Apple", kcal = 95.0, proteinG = 0.5, fatG = 0.3, carbG = 25.0, grams = 180.0)
+        repo.addFood(name = "Apple", kcal = 95.0, proteinG = 0.5, fatG = 0.3, carbG = 25.0, grams = 180.0,
+            factor = 1.5)
         val entry = db.foodEntryDao().getActive(userId).first()
 
         repo.saveMealFromEntry("My Apple", entry.id)
@@ -185,6 +212,8 @@ class TdeeRepositorySavedMealTest {
         assertEquals("Apple", item.name)
         assertEquals(95.0, item.kcal, 0.001)
         assertEquals(180.0, item.grams!!, 0.001)
+        assertEquals("saveMealFromEntry should snapshot the entity's scaleFactor",
+            1.5, item.factor, 0.001)
     }
 
     @Test
@@ -244,6 +273,21 @@ class TdeeRepositorySavedMealTest {
         assertEquals(4.5, entries[0].fatG, 0.001)
         assertEquals(102.0, entries[0].carbG, 0.001)
         assertEquals(300.0, entries[0].grams, 0.001)
+    }
+
+    @Test
+    fun `logSavedMeal scaleFactor is item factor times meal multiplier`() = runTest {
+        val savedId = repo.saveMeal(
+            "Dinner",
+            listOf(NewFoodItem("Pasta", 350.0, 12.0, 3.0, 68.0, 200.0, factor = 2.0)),
+        )
+
+        repo.logSavedMeal(savedId, factor = 1.5)
+
+        val entries = db.foodEntryDao().getActive(userId)
+        assertEquals(1, entries.size)
+        assertEquals(3.0, entries[0].scaleFactor, 0.001)
+        assertEquals(525.0, entries[0].kcal, 0.001)
     }
 
     @Test
@@ -331,6 +375,18 @@ class TdeeRepositorySavedMealTest {
         assertEquals(50.0, copy.kcal, 0.001)
         assertEquals(1.0, copy.proteinG, 0.001)
         assertEquals(10.0, copy.carbG, 0.001)
+    }
+
+    @Test
+    fun `repeatEntry scaleFactor is source entry scaleFactor times repeat factor`() = runTest {
+        repo.addFoodGroup(listOf(NewFoodItem("Apple", 100.0, 2.0, 0.0, 20.0, null, factor = 2.0)))
+        val original = db.foodEntryDao().getActive(userId).first()
+        assertEquals(2.0, original.scaleFactor, 0.001)
+
+        repo.repeatEntry(original.id, factor = 1.5)
+
+        val copy = db.foodEntryDao().getActive(userId).first { it.id != original.id }
+        assertEquals(3.0, copy.scaleFactor, 0.001)
     }
 
     // -----------------------------------------------------------------------

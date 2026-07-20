@@ -256,16 +256,24 @@ fun ParseConfirmScreen(
             )
         }
 
+        OutlinedButton(
+            onClick = { showSaveAsMealDialog = true },
+            enabled = state.canSave,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Save meal & add")
+        }
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             OutlinedButton(
-                onClick = { showSaveAsMealDialog = true },
+                onClick = viewModel::saveAllIndividually,
                 enabled = state.canSave,
                 modifier = Modifier.weight(1f),
             ) {
-                Text("Save meal & add")
+                Text("Add items")
             }
             Button(
                 onClick = { viewModel.saveAll(mealNameInput) },

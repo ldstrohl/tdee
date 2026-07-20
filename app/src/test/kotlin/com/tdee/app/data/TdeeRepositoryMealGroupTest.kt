@@ -22,6 +22,7 @@ import java.time.ZoneOffset
 /**
  * Tests for meal-group operations added to [TdeeRepository]:
  *   - [TdeeRepository.addFoodGroup]
+ *   - [TdeeRepository.addFoodItems]
  *   - [TdeeRepository.getFoodEntry]
  *   - [TdeeRepository.updateFood]
  *   - [TdeeRepository.softDeleteMeal]
@@ -142,6 +143,51 @@ class TdeeRepositoryMealGroupTest {
         assertTrue(other.isEmpty())
     }
 
+    @Test
+    fun `addFoodGroup persists each item's factor as scaleFactor`() = runTest {
+        repo.addFoodGroup(
+            listOf(
+                NewFoodItem("Rice", 200.0, 4.0, 1.0, 44.0, null, factor = 2.0),
+                NewFoodItem("Egg", 70.0, 6.0, 5.0, 0.0, null),
+            )
+        )
+
+        val entries = db.foodEntryDao().getActive(userId)
+        assertEquals(2.0, entries.first { it.name == "Rice" }.scaleFactor, 0.001)
+        assertEquals(1.0, entries.first { it.name == "Egg" }.scaleFactor, 0.001)
+    }
+
+    // -----------------------------------------------------------------------
+    // addFoodItems
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `addFoodItems inserts standalone entries with null mealId and mealName`() = runTest {
+        repo.addFoodItems(
+            listOf(
+                NewFoodItem("Apple", 95.0, 0.5, 0.3, 25.0, null, factor = 1.5),
+                NewFoodItem("Banana", 105.0, 1.3, 0.4, 27.0, null),
+            )
+        )
+
+        val entries = db.foodEntryDao().getActive(userId)
+        assertEquals(2, entries.size)
+        entries.forEach {
+            assertNull(it.mealId)
+            assertNull(it.mealName)
+        }
+        assertEquals(entries[0].timestamp, entries[1].timestamp)
+        assertEquals(1.5, entries.first { it.name == "Apple" }.scaleFactor, 0.001)
+        assertEquals(1.0, entries.first { it.name == "Banana" }.scaleFactor, 0.001)
+    }
+
+    @Test
+    fun `addFoodItems with empty list is a no-op`() = runTest {
+        repo.addFoodItems(emptyList())
+
+        assertTrue(db.foodEntryDao().getActive(userId).isEmpty())
+    }
+
     // -----------------------------------------------------------------------
     // getFoodEntry
     // -----------------------------------------------------------------------
@@ -208,6 +254,18 @@ class TdeeRepositoryMealGroupTest {
 
         val updated = db.foodEntryDao().getById(original.id)!!
         assertEquals(fixedNow, updated.updatedAt)
+    }
+
+    @Test
+    fun `updateFood resets scaleFactor to 1point0`() = runTest {
+        repo.addFoodGroup(listOf(NewFoodItem("Rice", 200.0, 4.0, 1.0, 44.0, null, factor = 2.0)))
+        val original = db.foodEntryDao().getActive(userId).first()
+        assertEquals(2.0, original.scaleFactor, 0.001)
+
+        repo.updateFood(original.id, "Updated Rice", 100.0, 2.0, 0.5, 22.0, null)
+
+        val updated = db.foodEntryDao().getById(original.id)!!
+        assertEquals(1.0, updated.scaleFactor, 0.001)
     }
 
     @Test

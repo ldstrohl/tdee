@@ -35,10 +35,10 @@ data class EditableFoodItem(
     /** Per-item scale multiplier, e.g. "1.5" for "50% more than the estimate". */
     val factor: String = "1",
 ) {
-    val kcalDouble: Double? get() = kcal.toDoubleOrNull()?.takeIf { it >= 0 }
+    val kcalDouble: Double? get() = kcal.toDoubleOrNull()?.takeIf { it >= 0 && it.isFinite() }
 
-    /** Parsed multiplier; invalid/blank/non-positive input falls back to 1.0 (no scaling). */
-    val factorDouble: Double get() = factor.toDoubleOrNull()?.takeIf { it > 0 } ?: 1.0
+    /** Parsed multiplier; invalid/blank/non-positive/non-finite input falls back to 1.0 (no scaling). */
+    val factorDouble: Double get() = factor.toDoubleOrNull()?.takeIf { it > 0 && it.isFinite() } ?: 1.0
 
     /** Savable when the name is non-blank and kcal is a valid non-negative number. */
     val isValid: Boolean get() = name.isNotBlank() && kcalDouble != null
@@ -73,17 +73,17 @@ data class ParseConfirmState(
     val totalProteinG: Double
         get() = items.filter { it.isValid }
             .sumOf { item ->
-                (item.proteinG.toDoubleOrNull()?.takeIf { v -> v >= 0 } ?: 0.0) * item.factorDouble
+                (item.proteinG.toDoubleOrNull()?.takeIf { v -> v >= 0 && v.isFinite() } ?: 0.0) * item.factorDouble
             }
     val totalFatG: Double
         get() = items.filter { it.isValid }
             .sumOf { item ->
-                (item.fatG.toDoubleOrNull()?.takeIf { v -> v >= 0 } ?: 0.0) * item.factorDouble
+                (item.fatG.toDoubleOrNull()?.takeIf { v -> v >= 0 && v.isFinite() } ?: 0.0) * item.factorDouble
             }
     val totalCarbG: Double
         get() = items.filter { it.isValid }
             .sumOf { item ->
-                (item.carbG.toDoubleOrNull()?.takeIf { v -> v >= 0 } ?: 0.0) * item.factorDouble
+                (item.carbG.toDoubleOrNull()?.takeIf { v -> v >= 0 && v.isFinite() } ?: 0.0) * item.factorDouble
             }
 }
 
@@ -202,6 +202,18 @@ class ParseConfirmViewModel(
         }
     }
 
+    /** Saves each valid item individually (no meal grouping), then navigates away. */
+    fun saveAllIndividually() {
+        val valid = _state.value.items.filter { it.isValid }
+        if (valid.isEmpty()) return
+        viewModelScope.launch {
+            val foodItems = validItems()
+            val date = selectedDate.value.takeUnless { it == LocalDate.now() }
+            repo.addFoodItems(foodItems, date)
+            _saved.value = true
+        }
+    }
+
     /** Saves the current valid items to the saved-meals library under [name]. */
     fun saveAsMeal(name: String) {
         if (name.isBlank()) return
@@ -233,10 +245,10 @@ class ParseConfirmViewModel(
             NewFoodItem(
                 name = item.name.trim(),
                 kcal = item.kcalDouble!!,
-                proteinG = item.proteinG.toDoubleOrNull()?.takeIf { v -> v >= 0 } ?: 0.0,
-                fatG = item.fatG.toDoubleOrNull()?.takeIf { v -> v >= 0 } ?: 0.0,
-                carbG = item.carbG.toDoubleOrNull()?.takeIf { v -> v >= 0 } ?: 0.0,
-                grams = item.grams.toDoubleOrNull()?.takeIf { v -> v >= 0 },
+                proteinG = item.proteinG.toDoubleOrNull()?.takeIf { v -> v >= 0 && v.isFinite() } ?: 0.0,
+                fatG = item.fatG.toDoubleOrNull()?.takeIf { v -> v >= 0 && v.isFinite() } ?: 0.0,
+                carbG = item.carbG.toDoubleOrNull()?.takeIf { v -> v >= 0 && v.isFinite() } ?: 0.0,
+                grams = item.grams.toDoubleOrNull()?.takeIf { v -> v >= 0 && v.isFinite() },
             ).scaledBy(item.factorDouble)
         }
 

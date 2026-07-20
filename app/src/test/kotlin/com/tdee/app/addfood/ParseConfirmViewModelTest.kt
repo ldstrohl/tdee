@@ -268,6 +268,25 @@ class ParseConfirmViewModelTest {
     }
 
     @Test
+    fun `factor text of Infinity falls back to the default 1point0 factor`() = runTest {
+        vm.setText("apple")
+        vm.parse()
+        vm.setKcal(0, "100")
+
+        vm.setFactor(0, "Infinity")
+
+        // Non-finite input is rejected; factor falls back to 1.0 rather than propagating Infinity
+        // (which would throw JSONException in Converters.fromSavedMealItems on save).
+        assertEquals(100.0, vm.state.value.totalKcal, 0.001)
+
+        vm.saveAll()
+        vm.saved.filter { it }.first()
+
+        val entries = repo.todayFoodEntries()
+        assertEquals(100.0, entries[0].kcal, 0.001)
+    }
+
+    @Test
     fun `default factor of 1 does not change totals`() = runTest {
         vm.setText("apple")
         vm.parse()
@@ -338,6 +357,57 @@ class ParseConfirmViewModelTest {
         val mealIds = entries.map { it.mealId }.distinct()
         assertEquals(1, mealIds.size)
         assertNotNull(mealIds[0])
+    }
+
+    // -----------------------------------------------------------------------
+    // saveAllIndividually logs items ungrouped (no shared mealId/mealName)
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `saveAllIndividually saves valid items ungrouped and sets saved`() = runTest {
+        vm.setText("apple and banana")
+        vm.parse()
+        vm.setKcal(0, "95")
+        vm.setKcal(1, "105")
+
+        vm.saveAllIndividually()
+        vm.saved.filter { it }.first()
+
+        val entries = repo.todayFoodEntries()
+        assertEquals(2, entries.size)
+        assertTrue(entries.all { it.mealId == null && it.mealName == null })
+    }
+
+    @Test
+    fun `saveAllIndividually skips invalid items`() = runTest {
+        vm.setText("a, b, c")
+        vm.parse()
+
+        vm.setKcal(0, "100")
+        // Item 1: blank name, kcal set -> invalid.
+        vm.setName(1, "")
+        vm.setKcal(1, "100")
+        // Item 2: kcal left blank -> invalid.
+
+        vm.saveAllIndividually()
+        vm.saved.filter { it }.first()
+
+        val entries = repo.todayFoodEntries()
+        assertEquals(1, entries.size)
+        assertEquals("a", entries[0].name)
+        assertNull(entries[0].mealId)
+    }
+
+    @Test
+    fun `saveAllIndividually is a no-op when nothing is valid`() = runTest {
+        vm.setText("apple")
+        vm.parse()
+        // kcal left blank -> invalid.
+
+        vm.saveAllIndividually()
+
+        assertFalse(vm.saved.value)
+        assertEquals(0, repo.todayFoodEntries().size)
     }
 
     // -----------------------------------------------------------------------
