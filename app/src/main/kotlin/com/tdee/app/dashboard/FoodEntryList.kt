@@ -43,6 +43,15 @@ internal sealed interface FoodDisplayItem {
     data class Group(val mealId: String, val items: List<FoodEntryEntity>, val mealName: String?) : FoodDisplayItem
 }
 
+/** Formats a scale factor for display, trimming trailing zeros (2.0 -> "2", 1.5 -> "1.5"). */
+internal fun formatFactor(factor: Double): String =
+    if (factor == factor.toLong().toDouble()) factor.toLong().toString() else factor.toString()
+
+/** Suffix appended to an entry's displayed name when its stored [FoodEntryEntity.scaleFactor]
+ * differs from 1.0, e.g. " ×2"; empty string when unscaled. */
+private fun FoodEntryEntity.scaleSuffix(): String =
+    if (kotlin.math.abs(scaleFactor - 1.0) > 1e-9) " ×${formatFactor(scaleFactor)}" else ""
+
 internal fun List<FoodEntryEntity>.toDisplayItems(): List<FoodDisplayItem> {
     val seenMeals = mutableSetOf<String>()
     val mealItemsMap = groupBy { it.mealId }.filterKeys { it != null }
@@ -346,7 +355,7 @@ internal fun FoodEntryList(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            displayItem.entry.name,
+                            displayItem.entry.name + displayItem.entry.scaleSuffix(),
                             style = MaterialTheme.typography.bodyMedium,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -419,7 +428,7 @@ internal fun FoodEntryList(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    entry.name,
+                                    entry.name + entry.scaleSuffix(),
                                     style = MaterialTheme.typography.bodyMedium,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,

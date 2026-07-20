@@ -202,6 +202,18 @@ class ParseConfirmViewModel(
         }
     }
 
+    /** Saves each valid item individually (no meal grouping), then navigates away. */
+    fun saveAllIndividually() {
+        val valid = _state.value.items.filter { it.isValid }
+        if (valid.isEmpty()) return
+        viewModelScope.launch {
+            val foodItems = validItems()
+            val date = selectedDate.value.takeUnless { it == LocalDate.now() }
+            repo.addFoodItems(foodItems, date)
+            _saved.value = true
+        }
+    }
+
     /** Saves the current valid items to the saved-meals library under [name]. */
     fun saveAsMeal(name: String) {
         if (name.isBlank()) return

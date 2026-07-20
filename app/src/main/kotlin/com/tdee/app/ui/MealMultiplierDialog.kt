@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -31,16 +32,22 @@ private val PRESET_FACTORS = listOf(0.5, 1.0, 1.5, 2.0)
 fun MealMultiplierDialog(
     onConfirm: (factor: Double) -> Unit,
     onDismiss: () -> Unit,
+    initialFactor: Double = 1.0,
+    title: String = "Scale this meal",
+    contextText: String? = null,
 ) {
-    var text by remember { mutableStateOf("1") }
+    var text by remember { mutableStateOf(presetLabel(initialFactor)) }
     val factor = text.toDoubleOrNull()
     val isValid = factor != null && factor > 0
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Scale this meal") },
+        title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (contextText != null) {
+                    Text(contextText, style = MaterialTheme.typography.bodySmall)
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     PRESET_FACTORS.forEach { preset ->
                         val label = presetLabel(preset)
