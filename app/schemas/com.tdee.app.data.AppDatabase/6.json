@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 6,
-    "identityHash": "9b11ca829020c3378229f78b7ebc44f5",
+    "identityHash": "644d6bae8f550eca57865852f7c64c75",
     "entities": [
       {
         "tableName": "user_profile",
@@ -186,7 +186,7 @@
       },
       {
         "tableName": "food_entry",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `userId` TEXT NOT NULL, `timestamp` INTEGER NOT NULL, `rawText` TEXT NOT NULL, `name` TEXT NOT NULL, `brand` TEXT, `quantity` REAL NOT NULL, `unit` TEXT NOT NULL, `grams` REAL NOT NULL, `kcal` REAL NOT NULL, `proteinG` REAL NOT NULL, `fatG` REAL NOT NULL, `carbG` REAL NOT NULL, `fdcId` TEXT, `sourceDb` TEXT NOT NULL, `mealId` TEXT, `mealName` TEXT, `scaleFactor` REAL NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `deletedAt` INTEGER)",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `userId` TEXT NOT NULL, `timestamp` INTEGER NOT NULL, `rawText` TEXT NOT NULL, `name` TEXT NOT NULL, `brand` TEXT, `quantity` REAL NOT NULL, `unit` TEXT NOT NULL, `grams` REAL NOT NULL, `kcal` REAL NOT NULL, `proteinG` REAL NOT NULL, `fatG` REAL NOT NULL, `carbG` REAL NOT NULL, `fdcId` TEXT, `sourceDb` TEXT NOT NULL, `mealId` TEXT, `mealName` TEXT, `scaleFactor` REAL NOT NULL DEFAULT 1.0, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `deletedAt` INTEGER)",
         "fields": [
           {
             "fieldPath": "id",
@@ -294,7 +294,8 @@
             "fieldPath": "scaleFactor",
             "columnName": "scaleFactor",
             "affinity": "REAL",
-            "notNull": true
+            "notNull": true,
+            "defaultValue": "1.0"
           },
           {
             "fieldPath": "createdAt",
@@ -533,7 +534,7 @@
     "views": [],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '9b11ca829020c3378229f78b7ebc44f5')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '644d6bae8f550eca57865852f7c64c75')"
     ]
   }
 }

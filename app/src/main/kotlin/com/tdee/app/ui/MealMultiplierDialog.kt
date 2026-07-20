@@ -77,5 +77,9 @@ fun MealMultiplierDialog(
     )
 }
 
-private fun presetLabel(v: Double): String =
-    if (v == v.toLong().toDouble()) v.toLong().toString() else v.toString()
+/** Formats a factor for display, rounding to 2dp to absorb floating-point compounding error
+ * (e.g. 1.1 * 1.3 -> 1.4300000000000002) and trimming trailing zeros (2.0 -> "2", 1.5 -> "1.5"). */
+private fun presetLabel(v: Double): String {
+    val rounded = Math.round(v * 100) / 100.0
+    return if (rounded == rounded.toLong().toDouble()) rounded.toLong().toString() else rounded.toString()
+}

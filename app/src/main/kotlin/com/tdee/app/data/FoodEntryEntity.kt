@@ -1,5 +1,6 @@
 package com.tdee.app.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -27,7 +28,7 @@ data class FoodEntryEntity(
     val sourceDb: FoodSourceDb,
     val mealId: String? = null,
     val mealName: String? = null,
-    val scaleFactor: Double = 1.0,
+    @ColumnInfo(defaultValue = "1.0") val scaleFactor: Double = 1.0,
     val createdAt: Instant,
     val updatedAt: Instant,
     val deletedAt: Instant? = null,

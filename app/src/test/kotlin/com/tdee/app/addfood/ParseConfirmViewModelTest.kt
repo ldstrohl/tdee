@@ -268,6 +268,25 @@ class ParseConfirmViewModelTest {
     }
 
     @Test
+    fun `factor text of Infinity falls back to the default 1point0 factor`() = runTest {
+        vm.setText("apple")
+        vm.parse()
+        vm.setKcal(0, "100")
+
+        vm.setFactor(0, "Infinity")
+
+        // Non-finite input is rejected; factor falls back to 1.0 rather than propagating Infinity
+        // (which would throw JSONException in Converters.fromSavedMealItems on save).
+        assertEquals(100.0, vm.state.value.totalKcal, 0.001)
+
+        vm.saveAll()
+        vm.saved.filter { it }.first()
+
+        val entries = repo.todayFoodEntries()
+        assertEquals(100.0, entries[0].kcal, 0.001)
+    }
+
+    @Test
     fun `default factor of 1 does not change totals`() = runTest {
         vm.setText("apple")
         vm.parse()

@@ -12,4 +12,10 @@ class FoodEntryListTest {
         assertEquals("1.5", formatFactor(1.5))
         assertEquals("0.5", formatFactor(0.5))
     }
+
+    @Test
+    fun `formatFactor rounds compounded floating-point error to 2dp`() {
+        assertEquals("1.43", formatFactor(1.1 * 1.3))
+        assertEquals("1.43", formatFactor(1.4300000000000002))
+    }
 }
