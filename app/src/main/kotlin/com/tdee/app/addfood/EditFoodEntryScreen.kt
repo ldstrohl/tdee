@@ -31,6 +31,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.tdee.app.dashboard.formatFactor
 import com.tdee.app.ui.MealMultiplierDialog
 import java.time.Instant
 import java.time.LocalDate
@@ -89,6 +90,11 @@ fun EditFoodEntryScreen(
         MealMultiplierDialog(
             onConfirm = { factor -> viewModel.logToDate(date, factor); logTargetDate = null },
             onDismiss = { logTargetDate = null },
+            initialFactor = state.scaleFactor,
+            title = "Scale this item",
+            contextText = if (kotlin.math.abs(state.scaleFactor - 1.0) > 1e-9) {
+                "Logged at ×${formatFactor(state.scaleFactor)} of original serving."
+            } else null,
         )
     }
 
@@ -159,6 +165,14 @@ fun EditFoodEntryScreen(
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 singleLine = true,
                 modifier = Modifier.weight(1f),
+            )
+        }
+
+        if (kotlin.math.abs(state.scaleFactor - 1.0) > 1e-9) {
+            Text(
+                "Scaled ×${formatFactor(state.scaleFactor)} from original serving",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
 

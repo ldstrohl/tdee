@@ -123,6 +123,60 @@ class EditFoodEntryViewModelTest {
     }
 
     @Test
+    fun `logToDate converts the confirmed absolute factor to a relative factor`() = runTest {
+        repo.addFood(
+            name = "Oats",
+            kcal = 300.0,
+            proteinG = 10.0,
+            fatG = 5.0,
+            carbG = 55.0,
+        )
+        val original = db.foodEntryDao().getActive(userId).first()
+        // Simulate a stored entry that's already scaled 2x from its original serving.
+        repo.repeatEntry(original.id, factor = 2.0)
+        val scaled = db.foodEntryDao().getActive(userId).first { it.scaleFactor == 2.0 }
+        assertEquals(600.0, scaled.kcal, 0.001)
+
+        val vm = EditFoodEntryViewModel(repo, scaled.id)
+        vm.state.first { it.scaleFactor == 2.0 }
+
+        // User confirms "1" (absolute, i.e. back to the original serving) -> relative 0.5.
+        vm.logToDate(pastDate, 1.0)
+        vm.loggedToDate.first { it != null }
+
+        val targetEntries = repo.foodEntriesForDate(pastDate)
+        assertEquals(1, targetEntries.size)
+        assertEquals(1.0, targetEntries[0].scaleFactor, 0.001)
+        assertEquals(300.0, targetEntries[0].kcal, 0.001)
+    }
+
+    @Test
+    fun `logToDate converts a confirmed absolute factor of 3 to relative 1_5 when stored factor is 2`() = runTest {
+        repo.addFood(
+            name = "Oats",
+            kcal = 300.0,
+            proteinG = 10.0,
+            fatG = 5.0,
+            carbG = 55.0,
+        )
+        val original = db.foodEntryDao().getActive(userId).first()
+        repo.repeatEntry(original.id, factor = 2.0)
+        val scaled = db.foodEntryDao().getActive(userId).first { it.scaleFactor == 2.0 }
+
+        val vm = EditFoodEntryViewModel(repo, scaled.id)
+        vm.state.first { it.scaleFactor == 2.0 }
+
+        vm.logToDate(pastDate, 3.0)
+        vm.loggedToDate.first { it != null }
+
+        val targetEntries = repo.foodEntriesForDate(pastDate)
+        assertEquals(1, targetEntries.size)
+        // Resulting scaleFactor is cumulative vs. the native serving: 2 (stored) * 1.5 (relative) = 3.
+        assertEquals(3.0, targetEntries[0].scaleFactor, 0.001)
+        assertEquals(900.0, targetEntries[0].kcal, 0.001)
+    }
+
+    @Test
     fun `save writes edited fields back to the repo`() = runTest {
         repo.addFood(
             name = "Oats",

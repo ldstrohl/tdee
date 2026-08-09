@@ -48,6 +48,21 @@ class NewFoodItemScalingTest {
     }
 
     @Test
+    fun `scaledBy accumulates factor across repeated calls and still scales macros`() {
+        val item = NewFoodItem(
+            name = "Rice", kcal = 200.0, proteinG = 4.0, fatG = 1.0, carbG = 44.0, grams = 150.0,
+        )
+
+        val scaledOnce = item.scaledBy(2.0)
+        assertEquals(2.0, scaledOnce.factor, 0.001)
+        assertEquals(400.0, scaledOnce.kcal, 0.001)
+
+        val scaledTwice = scaledOnce.scaledBy(1.5)
+        assertEquals(3.0, scaledTwice.factor, 0.001)
+        assertEquals(600.0, scaledTwice.kcal, 0.001)
+    }
+
+    @Test
     fun `List of NewFoodItem scaledBy scales every item`() {
         val items = listOf(
             NewFoodItem("A", 100.0, 10.0, 2.0, 20.0, 50.0),

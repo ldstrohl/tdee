@@ -73,6 +73,7 @@ class Converters {
             obj.put("fatG", item.fatG)
             obj.put("carbG", item.carbG)
             if (item.grams != null) obj.put("grams", item.grams)
+            obj.put("factor", item.factor)
             arr.put(obj)
         }
         return arr.toString()
@@ -90,6 +91,7 @@ class Converters {
                 fatG = obj.getDouble("fatG"),
                 carbG = obj.getDouble("carbG"),
                 grams = if (obj.has("grams")) obj.getDouble("grams") else null,
+                factor = obj.optDouble("factor", 1.0),
             )
         }
     }
