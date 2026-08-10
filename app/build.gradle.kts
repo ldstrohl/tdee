@@ -92,6 +92,9 @@ dependencies {
     // Encrypted storage for the user's LLM API keys
     implementation(libs.androidx.security.crypto)
 
+    // Google Drive backup: OAuth authorization (AuthorizationClient, not sign-in identity)
+    implementation(libs.play.services.auth)
+
     // Debug
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)

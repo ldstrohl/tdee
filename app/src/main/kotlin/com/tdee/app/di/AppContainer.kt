@@ -7,6 +7,8 @@ import com.tdee.app.addfood.FoodParser
 import com.tdee.app.addfood.LlmFoodParser
 import com.tdee.app.data.AppDatabase
 import com.tdee.app.data.BackupManager
+import com.tdee.app.data.DriveAuth
+import com.tdee.app.data.DriveClient
 import com.tdee.app.data.LlmSettingsStore
 import com.tdee.app.data.MIGRATION_2_3
 import com.tdee.app.data.MIGRATION_3_4
@@ -57,6 +59,10 @@ class AppContainer(context: Context) {
 
     val llmSettingsStore: LlmSettingsStore by lazy { LlmSettingsStore(appContext) }
 
+    val driveAuth: DriveAuth by lazy {
+        DriveAuth(appContext, appContext.getSharedPreferences("com.tdee.app.settings", Context.MODE_PRIVATE))
+    }
+
     /** Shared HTTP client. `callTimeout` bounds the whole call — OkHttp's defaults set only
      *  per-phase timeouts, so a stalled transfer would otherwise hang indefinitely. */
     val httpClient: OkHttpClient by lazy {
@@ -70,6 +76,10 @@ class AppContainer(context: Context) {
      */
     val foodParser: FoodParser by lazy {
         LlmFoodParser(llmSettingsStore, httpClient)
+    }
+
+    val driveClient: DriveClient by lazy {
+        DriveClient(client = httpClient, token = { driveAuth.token() }, onUnauthorized = { driveAuth.invalidate() })
     }
 
     val repository: TdeeRepository by lazy {
