@@ -2,9 +2,11 @@ package com.tdee.app.di
 
 import android.content.Context
 import androidx.room.Room
+import com.tdee.app.BuildConfig
 import com.tdee.app.addfood.FoodParser
 import com.tdee.app.addfood.LlmFoodParser
 import com.tdee.app.data.AppDatabase
+import com.tdee.app.data.BackupManager
 import com.tdee.app.data.LlmSettingsStore
 import com.tdee.app.data.MIGRATION_2_3
 import com.tdee.app.data.MIGRATION_3_4
@@ -22,6 +24,7 @@ import com.tdee.app.data.WeightEntryDao
 import com.tdee.app.data.WeightTrendCacheDao
 import com.tdee.app.ui.theme.ThemeStore
 import okhttp3.OkHttpClient
+import java.io.File
 import java.time.Clock
 import java.util.concurrent.TimeUnit
 
@@ -91,6 +94,22 @@ class AppContainer(context: Context) {
             weightDao = weightDao,
             currentUser = currentUser,
             clock = Clock.systemUTC(),
+        )
+    }
+
+    val backupManager: BackupManager by lazy {
+        BackupManager(
+            db = database,
+            profileDao = profileDao,
+            weightDao = weightDao,
+            foodDao = foodDao,
+            targetDao = targetPeriodDao,
+            savedMealDao = savedMealDao,
+            trendCacheDao = trendCacheDao,
+            currentUser = currentUser,
+            themeStore = themeStore,
+            snapshotDir = File(appContext.filesDir, "backup"),
+            appVersionCode = BuildConfig.VERSION_CODE,
         )
     }
 }
