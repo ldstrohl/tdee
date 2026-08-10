@@ -7,7 +7,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.tdee.app.data.DriveBackupWorker
 
 /**
  * Stateful host for the Backup screen. Owns the Drive consent launcher — [BackupViewModel] can't
@@ -18,6 +20,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 fun BackupRoute(
     onBack: () -> Unit,
 ) {
+    val context = LocalContext.current
     val viewModel: BackupViewModel = viewModel(factory = BackupViewModel.Factory)
     val state by viewModel.state.collectAsState()
 
@@ -30,6 +33,12 @@ fun BackupRoute(
     LaunchedEffect(state.authRequest) {
         state.authRequest?.let { sender ->
             authLauncher.launch(IntentSenderRequest.Builder(sender).build())
+        }
+    }
+
+    LaunchedEffect(state.status) {
+        if (state.status is BackupUiState.Ready) {
+            DriveBackupWorker.enqueue(context)
         }
     }
 
