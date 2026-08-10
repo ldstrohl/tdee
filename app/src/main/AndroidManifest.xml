@@ -12,8 +12,11 @@
         <package android:name="com.google.android.apps.healthdata" />
     </queries>
 
+    <!-- App provides its own explicit Drive backup; disable Android Auto Backup to prevent
+         stale tdee.db restoration on reinstall. -->
     <application
         android:name=".TdeeApplication"
+        android:allowBackup="false"
         android:label="TDEE"
         android:theme="@android:style/Theme.Material.Light.NoActionBar"
         android:supportsRtl="true">

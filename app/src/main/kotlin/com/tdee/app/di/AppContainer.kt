@@ -23,6 +23,7 @@ import com.tdee.app.data.WeightTrendCacheDao
 import com.tdee.app.ui.theme.ThemeStore
 import okhttp3.OkHttpClient
 import java.time.Clock
+import java.util.concurrent.TimeUnit
 
 /**
  * Manual DI container. Holds lazily-initialized app-scoped singletons.
@@ -53,13 +54,19 @@ class AppContainer(context: Context) {
 
     val llmSettingsStore: LlmSettingsStore by lazy { LlmSettingsStore(appContext) }
 
+    /** Shared HTTP client. `callTimeout` bounds the whole call — OkHttp's defaults set only
+     *  per-phase timeouts, so a stalled transfer would otherwise hang indefinitely. */
+    val httpClient: OkHttpClient by lazy {
+        OkHttpClient.Builder().callTimeout(60, TimeUnit.SECONDS).build()
+    }
+
     /**
      * Natural-language [FoodParser]: client-direct, bring-your-own-key ([LlmFoodParser]). Reads the
      * selected provider/model/key from [llmSettingsStore] at parse time; with no key it returns a
      * NO_KEY failure the UI surfaces (manual entry still works).
      */
     val foodParser: FoodParser by lazy {
-        LlmFoodParser(llmSettingsStore, OkHttpClient())
+        LlmFoodParser(llmSettingsStore, httpClient)
     }
 
     val repository: TdeeRepository by lazy {
