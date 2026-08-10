@@ -55,6 +55,7 @@ fun SettingsScreen(
     healthConnectState: HealthConnectUiState = HealthConnectUiState.Loading,
     onHealthConnectTap: () -> Unit = {},
     onExportData: () -> Unit = {},
+    onBackup: () -> Unit = {},
     debugWriteStatus: String? = null,
     onDebugWriteSampleWeights: (() -> Unit)? = null,
 ) {
@@ -112,6 +113,22 @@ fun SettingsScreen(
             Text("Export data", style = MaterialTheme.typography.bodyLarge)
             Text(
                 "Share a CSV of your weight, calories, macros, and TDEE",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        // Backup & restore entry
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onBackup() }
+                .padding(vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text("Backup & restore", style = MaterialTheme.typography.bodyLarge)
+            Text(
+                "Back up your data to Google Drive",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

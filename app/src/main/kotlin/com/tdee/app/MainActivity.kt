@@ -46,6 +46,7 @@ import com.tdee.app.savedmeals.SavedMealsScreen
 import com.tdee.app.savedmeals.SavedMealsViewModel
 import com.tdee.app.search.MealSearchScreen
 import com.tdee.app.search.MealSearchViewModel
+import com.tdee.app.settings.BackupRoute
 import com.tdee.app.settings.LlmSettingsScreen
 import com.tdee.app.settings.LlmSettingsViewModel
 import com.tdee.app.settings.SettingsRoute
@@ -170,7 +171,12 @@ class MainActivity : ComponentActivity() {
                                         onBack = { navController.popBackStack() },
                                         onEditProfile = { navController.navigate("edit_profile") },
                                         onMealParsing = { navController.navigate("llm_settings") },
+                                        onBackup = { navController.navigate("backup") },
                                     )
+                                }
+
+                                composable("backup") {
+                                    BackupRoute(onBack = { navController.popBackStack() })
                                 }
 
                                 composable("llm_settings") {
