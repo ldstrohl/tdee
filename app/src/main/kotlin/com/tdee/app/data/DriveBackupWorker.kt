@@ -32,6 +32,7 @@ class DriveBackupWorker(
         val driveAuth = (applicationContext as TdeeApplication).container.driveAuth
 
         return runBackup(
+            localCounts = { backupManager.localCounts() },
             backup = { backupManager.backup() },
             ensureFolder = { driveClient.ensureFolder() },
             upload = { folderId, filename, json -> driveClient.upload(folderId, filename, json) },
@@ -52,6 +53,7 @@ class DriveBackupWorker(
          * Pure of WorkManager scheduling so it can be unit-tested with fakes.
          */
         suspend fun runBackup(
+            localCounts: suspend () -> BackupCounts,
             backup: suspend () -> String,
             ensureFolder: suspend () -> String,
             upload: suspend (String, String, String) -> Unit,
@@ -60,12 +62,23 @@ class DriveBackupWorker(
             clock: Clock = Clock.systemUTC(),
         ): Result =
             try {
-                val json = backup()
-                val folderId = ensureFolder()
-                val filename = "tdee-backup-${clock.instant().toString().replace(':', '-')}.json"
-                upload(folderId, filename, json)
-                prune(folderId)
-                Result.success()
+                // Never auto-upload an empty device. After a reinstall the app is empty until the
+                // user restores, and an unattended daily backup would otherwise upload that empty
+                // state — then, since retention keeps only the newest N, repeated empty uploads
+                // would prune away every good backup the user still needs. Skipping is reported as
+                // success: there is genuinely nothing to do, and retrying would not change that.
+                // The manual "Back up now" button is deliberately not gated — that is an explicit
+                // user action on data they can see.
+                if (localCounts().isEmpty()) {
+                    Result.success()
+                } else {
+                    val json = backup()
+                    val folderId = ensureFolder()
+                    val filename = "tdee-backup-${clock.instant().toString().replace(':', '-')}.json"
+                    upload(folderId, filename, json)
+                    prune(folderId)
+                    Result.success()
+                }
             } catch (e: DriveException) {
                 when (e.error) {
                     DriveError.NeedsAuth -> {

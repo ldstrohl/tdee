@@ -23,6 +23,10 @@ class DriveBackupWorkerTest {
     private val fixedClock: Clock =
         Clock.fixed(Instant.parse("2026-08-09T14:30:00Z"), ZoneOffset.UTC)
 
+    /** A device with real logged history — the normal case for the periodic worker. */
+    private val nonEmptyCounts =
+        BackupCounts(foods = 12, weights = 3, savedMeals = 1, targets = 1, hasProfile = true)
+
     private fun stubIntentSender(): IntentSender =
         ReflectionHelpers.callConstructor(IntentSender::class.java)
 
@@ -36,6 +40,7 @@ class DriveBackupWorkerTest {
         var reconnectFlag = false
 
         val result = DriveBackupWorker.runBackup(
+            localCounts = { nonEmptyCounts },
             backup = { backupJson },
             ensureFolder = { "folder-123".also { folderId = it } },
             upload = { folder, name, json ->
@@ -60,6 +65,7 @@ class DriveBackupWorkerTest {
         var reconnectFlag = false
 
         val result = DriveBackupWorker.runBackup(
+            localCounts = { nonEmptyCounts },
             backup = { "{}" },
             ensureFolder = { "folder-1" },
             upload = { _, _, _ -> throw DriveException(DriveError.NeedsAuth, "revoked") },
@@ -77,6 +83,7 @@ class DriveBackupWorkerTest {
         var reconnectFlag = false
 
         val result = DriveBackupWorker.runBackup(
+            localCounts = { nonEmptyCounts },
             backup = { throw NeedsAuthorizationException(stubIntentSender()) },
             ensureFolder = { "folder-1" },
             upload = { _, _, _ -> },
@@ -94,6 +101,7 @@ class DriveBackupWorkerTest {
         var reconnectFlag = false
 
         val result = DriveBackupWorker.runBackup(
+            localCounts = { nonEmptyCounts },
             backup = { "{}" },
             ensureFolder = { throw NeedsAuthorizationException(stubIntentSender()) },
             upload = { _, _, _ -> },
@@ -111,6 +119,7 @@ class DriveBackupWorkerTest {
         var reconnectFlag = false
 
         val result = DriveBackupWorker.runBackup(
+            localCounts = { nonEmptyCounts },
             backup = { "{}" },
             ensureFolder = { "folder-1" },
             upload = { _, _, _ -> throw DriveException(DriveError.Network, "no internet") },
@@ -128,6 +137,7 @@ class DriveBackupWorkerTest {
         var reconnectFlag = false
 
         val result = DriveBackupWorker.runBackup(
+            localCounts = { nonEmptyCounts },
             backup = { "{}" },
             ensureFolder = { "folder-1" },
             upload = { _, _, _ -> throw DriveException(DriveError.RateLimited, "rate limited") },
@@ -145,6 +155,7 @@ class DriveBackupWorkerTest {
         var reconnectFlag = false
 
         val result = DriveBackupWorker.runBackup(
+            localCounts = { nonEmptyCounts },
             backup = { "{}" },
             ensureFolder = { "folder-1" },
             upload = { _, _, _ -> throw DriveException(DriveError.Server, "server error") },
@@ -162,6 +173,7 @@ class DriveBackupWorkerTest {
         var reconnectFlag = false
 
         val result = DriveBackupWorker.runBackup(
+            localCounts = { nonEmptyCounts },
             backup = { "{}" },
             ensureFolder = { "folder-1" },
             upload = { _, _, _ -> throw DriveException(DriveError.Unknown("weird"), "weird") },
@@ -179,6 +191,7 @@ class DriveBackupWorkerTest {
         var reconnectFlag = false
 
         val result = DriveBackupWorker.runBackup(
+            localCounts = { nonEmptyCounts },
             backup = { throw RuntimeException("something broke") },
             ensureFolder = { "folder-1" },
             upload = { _, _, _ -> },
@@ -189,5 +202,54 @@ class DriveBackupWorkerTest {
 
         assertTrue(result is ListenableWorker.Result.Retry)
         assertTrue("reconnect flag should not be set on generic error", !reconnectFlag)
+    }
+
+    // Regression: found on-device. After an uninstall/reinstall the app is empty until the user
+    // restores. The periodic worker fired against that empty state and uploaded a 784-byte backup.
+    // Left alone, repeated empty uploads would prune away every good backup via retention.
+    @Test
+    fun `runBackup skips the upload entirely when the device has no logged history`() = runTest {
+        var uploadCalled = false
+        var pruneCalled = false
+        var backupCalled = false
+        var reconnectFlag = false
+
+        val result = DriveBackupWorker.runBackup(
+            localCounts = {
+                BackupCounts(foods = 0, weights = 0, savedMeals = 0, targets = 0, hasProfile = true)
+            },
+            backup = { backupCalled = true; "{}" },
+            ensureFolder = { "folder-123" },
+            upload = { _, _, _ -> uploadCalled = true },
+            prune = { _ -> pruneCalled = true },
+            setNeedsReconnect = { reconnectFlag = it },
+            clock = fixedClock,
+        )
+
+        assertEquals(ListenableWorker.Result.success(), result)
+        assertTrue("must not upload an empty device", !uploadCalled)
+        assertTrue("must not prune — that is what would destroy good backups", !pruneCalled)
+        assertTrue("must not even build the backup", !backupCalled)
+        assertTrue("skipping is not an auth problem", !reconnectFlag)
+    }
+
+    @Test
+    fun `runBackup still uploads when only weigh-ins exist`() = runTest {
+        var uploadCalled = false
+
+        val result = DriveBackupWorker.runBackup(
+            localCounts = {
+                BackupCounts(foods = 0, weights = 5, savedMeals = 0, targets = 0, hasProfile = true)
+            },
+            backup = { "{}" },
+            ensureFolder = { "folder-123" },
+            upload = { _, _, _ -> uploadCalled = true },
+            prune = { _ -> },
+            setNeedsReconnect = { },
+            clock = fixedClock,
+        )
+
+        assertEquals(ListenableWorker.Result.success(), result)
+        assertTrue("weigh-ins alone are real data", uploadCalled)
     }
 }

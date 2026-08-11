@@ -13,7 +13,10 @@ data class BackupCounts(
     val savedMeals: Int,
     val targets: Int,
     val hasProfile: Boolean,
-)
+) {
+    /** No logged history worth backing up. A profile alone is onboarding, not data. */
+    fun isEmpty(): Boolean = foods == 0 && weights == 0 && savedMeals == 0 && targets == 0
+}
 
 data class RestoreResult(val counts: BackupCounts, val snapshotPath: String)
 
