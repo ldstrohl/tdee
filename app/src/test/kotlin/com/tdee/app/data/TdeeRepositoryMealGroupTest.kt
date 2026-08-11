@@ -269,6 +269,18 @@ class TdeeRepositoryMealGroupTest {
     }
 
     @Test
+    fun `updateFood persists a passed scaleFactor`() = runTest {
+        repo.addFoodGroup(listOf(NewFoodItem("Rice", 200.0, 4.0, 1.0, 44.0, null, factor = 2.0)))
+        val original = db.foodEntryDao().getActive(userId).first()
+        assertEquals(2.0, original.scaleFactor, 0.001)
+
+        repo.updateFood(original.id, "Updated Rice", 150.0, 3.0, 0.75, 33.0, null, scaleFactor = 1.5)
+
+        val updated = db.foodEntryDao().getById(original.id)!!
+        assertEquals(1.5, updated.scaleFactor, 0.001)
+    }
+
+    @Test
     fun `updateFood is a no-op for unknown id`() = runTest {
         // Should not throw
         repo.updateFood(9999L, "x", 100.0, 0.0, 0.0, 0.0, null)

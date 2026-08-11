@@ -619,8 +619,7 @@ class TdeeRepository(
      * this is a no-op. Preserves [FoodEntryEntity.rawText], [FoodEntryEntity.userId],
      * [FoodEntryEntity.timestamp], [FoodEntryEntity.createdAt], [FoodEntryEntity.mealId],
      * and [FoodEntryEntity.deletedAt]; bumps [FoodEntryEntity.updatedAt] to [clock]'s instant.
-     * Resets [FoodEntryEntity.scaleFactor] to 1.0 — a manual macro edit makes the edited values
-     * the new native serving.
+     * Persists [scaleFactor] (defaults to 1.0, matching prior behavior when not specified).
      */
     suspend fun updateFood(
         id: Long,
@@ -630,6 +629,7 @@ class TdeeRepository(
         fatG: Double,
         carbG: Double,
         grams: Double?,
+        scaleFactor: Double = 1.0,
     ) = withContext(ioDispatcher) {
         val existing = foodDao.getById(id) ?: return@withContext
         foodDao.update(
@@ -640,7 +640,7 @@ class TdeeRepository(
                 fatG = fatG,
                 carbG = carbG,
                 grams = grams ?: existing.grams,
-                scaleFactor = 1.0,
+                scaleFactor = scaleFactor,
                 updatedAt = clock.instant(),
             )
         )
