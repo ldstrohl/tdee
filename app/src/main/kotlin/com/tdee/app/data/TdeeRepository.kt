@@ -763,12 +763,14 @@ class TdeeRepository(
 
     /**
      * Snapshots the active entries in [mealId] and saves them as a named reusable meal.
-     * @return the auto-generated saved meal id.
+     * @return the auto-generated saved meal id, or null if [mealId] has no active entries
+     *   (nothing is saved in that case).
      */
-    suspend fun saveMealFromGroup(name: String, mealId: String): Long =
+    suspend fun saveMealFromGroup(name: String, mealId: String): Long? =
         withContext(Dispatchers.IO) {
             val uid = currentUser.userId()
             val entries = foodDao.getByMeal(uid, mealId)
+            if (entries.isEmpty()) return@withContext null
             savedMealDao.insert(
                 SavedMealEntity(
                     userId = uid,
@@ -789,25 +791,25 @@ class TdeeRepository(
     /**
      * Snapshots the standalone food entry with [entryId] and saves it as a one-item named
      * reusable meal.
-     * @return the auto-generated saved meal id.
+     * @return the auto-generated saved meal id, or null if [entryId] does not resolve to an
+     *   entry (nothing is saved in that case).
      */
-    suspend fun saveMealFromEntry(name: String, entryId: Long): Long =
+    suspend fun saveMealFromEntry(name: String, entryId: Long): Long? =
         withContext(Dispatchers.IO) {
             val uid = currentUser.userId()
-            val entry = foodDao.getById(entryId)
-            val items = listOfNotNull(entry).map {
-                SavedMealItem(
-                    name = it.name, kcal = it.kcal, proteinG = it.proteinG,
-                    fatG = it.fatG, carbG = it.carbG,
-                    grams = it.grams.takeIf { g -> g > 0 },
-                    factor = it.scaleFactor,
-                )
-            }
+            val entry = foodDao.getById(entryId) ?: return@withContext null
             savedMealDao.insert(
                 SavedMealEntity(
                     userId = uid,
                     name = name,
-                    items = items,
+                    items = listOf(
+                        SavedMealItem(
+                            name = entry.name, kcal = entry.kcal, proteinG = entry.proteinG,
+                            fatG = entry.fatG, carbG = entry.carbG,
+                            grams = entry.grams.takeIf { g -> g > 0 },
+                            factor = entry.scaleFactor,
+                        )
+                    ),
                     createdAt = clock.instant(),
                 )
             )
