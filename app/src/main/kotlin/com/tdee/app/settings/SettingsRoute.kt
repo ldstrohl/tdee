@@ -41,6 +41,7 @@ fun SettingsRoute(
     onBack: () -> Unit,
     onEditProfile: () -> Unit,
     onMealParsing: () -> Unit,
+    onBackup: () -> Unit,
 ) {
     val context = LocalContext.current
     val container = remember { (context.applicationContext as TdeeApplication).container }
@@ -90,6 +91,7 @@ fun SettingsRoute(
         onBack = onBack,
         onEditProfile = onEditProfile,
         onMealParsing = onMealParsing,
+        onBackup = onBackup,
         healthConnectState = hcState,
         onExportData = {
             scope.launch {

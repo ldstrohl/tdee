@@ -11,6 +11,9 @@ interface TargetPeriodDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(period: TargetPeriodEntity): Long
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(periods: List<TargetPeriodEntity>): List<Long>
+
     @Query("SELECT * FROM target_period WHERE userId = :userId ORDER BY startDate ASC")
     suspend fun getAll(userId: String): List<TargetPeriodEntity>
 

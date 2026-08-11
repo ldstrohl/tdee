@@ -2,6 +2,7 @@ package com.tdee.app.data
 
 import androidx.room.Dao
 import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import kotlinx.coroutines.flow.Flow
 
@@ -22,4 +23,10 @@ interface SavedMealDao {
 
     @Query("DELETE FROM saved_meal WHERE id = :id")
     suspend fun deleteById(id: Long)
+
+    @Query("DELETE FROM saved_meal WHERE userId = :userId")
+    suspend fun deleteAll(userId: String)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(meals: List<SavedMealEntity>): List<Long>
 }
