@@ -1,5 +1,6 @@
 package com.tdee.app.dashboard
 
+import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -21,6 +22,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -29,6 +31,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.tdee.app.data.FoodEntryEntity
 import com.tdee.app.insights.ChartType
@@ -56,6 +59,15 @@ fun DashboardScreen(
     val state by viewModel.state.collectAsState()
     val dayFoods by viewModel.dayFoods.collectAsState()
     val selectedDate by viewModel.selectedDate.collectAsState()
+    val saveMealMessage by viewModel.saveMealMessage.collectAsState()
+
+    val context = LocalContext.current
+    LaunchedEffect(saveMealMessage) {
+        saveMealMessage?.let {
+            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+            viewModel.clearSaveMealMessage()
+        }
+    }
 
     val today = remember { LocalDate.now() }
     val dateLabel = if (selectedDate == today) "Today"

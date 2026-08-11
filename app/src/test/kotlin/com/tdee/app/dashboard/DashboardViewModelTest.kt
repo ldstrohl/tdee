@@ -17,6 +17,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelStore
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -74,6 +77,27 @@ class DashboardViewModelTest {
 
     private val testDispatcher = UnconfinedTestDispatcher()
 
+    /**
+     * ViewModels created by a test. Each one starts eager `stateIn` collectors on its
+     * viewModelScope; if they are still live when the next test calls `Dispatchers.setMain`,
+     * the Main dispatcher is being reset while in use and an unrelated test fails with
+     * "Dispatchers.Main is used concurrently with setting it". Clearing them in teardown
+     * cancels those scopes, so tests stop leaking coroutines into each other.
+     */
+    private val viewModelStore = ViewModelStore()
+    private var viewModelKey = 0
+
+    @Suppress("UNCHECKED_CAST")
+    private fun viewModel(day: LocalDate? = null): DashboardViewModel {
+        val factory = object : ViewModelProvider.Factory {
+            override fun <T : ViewModel> create(modelClass: Class<T>): T =
+                (if (day == null) DashboardViewModel(repo) else DashboardViewModel(repo, day)) as T
+        }
+        return ViewModelProvider(viewModelStore, factory)[
+            "vm-${viewModelKey++}", DashboardViewModel::class.java,
+        ]
+    }
+
     @Before
     fun setup() = runTest {
         Dispatchers.setMain(testDispatcher)
@@ -81,7 +105,14 @@ class DashboardViewModelTest {
         db = Room.inMemoryDatabaseBuilder(
             RuntimeEnvironment.getApplication(),
             AppDatabase::class.java,
-        ).allowMainThreadQueries().build()
+        ).allowMainThreadQueries()
+            // Room runs queries and invalidation-tracker callbacks on its own executors, so a
+            // Flow emission can dispatch to Main on a thread the test scheduler cannot drain —
+            // after the test ended, colliding with the next test's Dispatchers.setMain. Running
+            // both executors inline keeps all of that on the test thread.
+            .setQueryExecutor { it.run() }
+            .setTransactionExecutor { it.run() }
+            .build()
 
         db.userProfileDao().upsert(makeProfile(goalRateKgPerWeek = -0.25))
 
@@ -113,11 +144,18 @@ class DashboardViewModelTest {
             currentUser = fakeCurrentUser,
             zone = zone,
             clock = fixedClock,
+            ioDispatcher = testDispatcher,
         )
     }
 
     @After
     fun teardown() {
+        // Order matters. Cancel the ViewModel scopes first, then let the dispatcher drain so
+        // those cancellations actually unwind, and only then close the database. Closing it
+        // while a collector is still mid-query throws from a coroutine nobody is awaiting, which
+        // resurfaces as an unrelated test failing with UncaughtExceptionsBeforeTest.
+        viewModelStore.clear()
+        testDispatcher.scheduler.advanceUntilIdle()
         db.close()
         Dispatchers.resetMain()
     }
@@ -128,7 +166,7 @@ class DashboardViewModelTest {
 
     @Test
     fun `reaches Loaded state with seeded profile and weight data`() = runTest {
-        val vm = DashboardViewModel(repo)
+        val vm = viewModel()
 
         val loaded = vm.state
             .filter { it is DashboardUiState.Loaded }
@@ -144,7 +182,7 @@ class DashboardViewModelTest {
 
     @Test
     fun `calibrating is true with only 7 days of data (window=14)`() = runTest {
-        val vm = DashboardViewModel(repo)
+        val vm = viewModel()
 
         val loaded = vm.state
             .filter { it is DashboardUiState.Loaded }
@@ -162,7 +200,7 @@ class DashboardViewModelTest {
 
     @Test
     fun `trend weight is converted from kg to lb (kg × 2_2046226)`() = runTest {
-        val vm = DashboardViewModel(repo)
+        val vm = viewModel()
 
         val loaded = vm.state
             .filter { it is DashboardUiState.Loaded }
@@ -192,7 +230,7 @@ class DashboardViewModelTest {
     @Test
     fun `todayConsumedKcal is null when no food logged today`() = runTest {
         // No food on today's log-day (2026-06-21) in default setup.
-        val vm = DashboardViewModel(repo, fixedDay)
+        val vm = viewModel(fixedDay)
 
         val loaded = vm.state
             .filter { it is DashboardUiState.Loaded }
@@ -209,7 +247,7 @@ class DashboardViewModelTest {
         db.foodEntryDao().insert(makeFoodEntry(t1, kcal = 600.0))
         db.foodEntryDao().insert(makeFoodEntry(t2, kcal = 800.0))
 
-        val vm = DashboardViewModel(repo, fixedDay)
+        val vm = viewModel(fixedDay)
 
         val loaded = vm.state
             .filter { it is DashboardUiState.Loaded }
@@ -230,7 +268,7 @@ class DashboardViewModelTest {
     @Test
     fun `calorieTargetKcal is below TDEE estimate for deficit goal`() = runTest {
         // Default profile has goalRateKgPerWeek = -0.25 (cut).
-        val vm = DashboardViewModel(repo)
+        val vm = viewModel()
 
         val loaded = vm.state
             .filter { it is DashboardUiState.Loaded }
@@ -253,7 +291,14 @@ class DashboardViewModelTest {
         val freshDb = Room.inMemoryDatabaseBuilder(
             RuntimeEnvironment.getApplication(),
             AppDatabase::class.java,
-        ).allowMainThreadQueries().build()
+        ).allowMainThreadQueries()
+            // Room runs queries and invalidation-tracker callbacks on its own executors, so a
+            // Flow emission can dispatch to Main on a thread the test scheduler cannot drain —
+            // after the test ended, colliding with the next test's Dispatchers.setMain. Running
+            // both executors inline keeps all of that on the test thread.
+            .setQueryExecutor { it.run() }
+            .setTransactionExecutor { it.run() }
+            .build()
 
         val freshUserId = "fresh-routing-user"
         val freshRepo = TdeeRepository(
@@ -266,6 +311,7 @@ class DashboardViewModelTest {
             currentUser = CurrentUser { freshUserId },
             zone = zone,
             clock = fixedClock,
+            ioDispatcher = testDispatcher,
         )
 
         // Before save: emits null.
@@ -294,7 +340,7 @@ class DashboardViewModelTest {
 
     @Test
     fun `consumedTotals is zero when no food logged today`() = runTest {
-        val vm = DashboardViewModel(repo, fixedDay)
+        val vm = viewModel(fixedDay)
 
         val loaded = vm.state
             .filter { it is DashboardUiState.Loaded }
@@ -312,7 +358,7 @@ class DashboardViewModelTest {
         db.foodEntryDao().insert(makeFoodEntry(t1, kcal = 600.0))
         db.foodEntryDao().insert(makeFoodEntry(t2, kcal = 800.0))
 
-        val vm = DashboardViewModel(repo, fixedDay)
+        val vm = viewModel(fixedDay)
 
         val loaded = vm.state
             .filter { it is DashboardUiState.Loaded }
@@ -328,7 +374,7 @@ class DashboardViewModelTest {
     @Test
     fun `consumedTotals updates reactively after food entry is added`() = runTest {
         // VM views fixedDay (2026-06-21); repo.addFood uses clock.instant() = same day.
-        val vm = DashboardViewModel(repo, fixedDay)
+        val vm = viewModel(fixedDay)
 
         // Wait for initial loaded state (no food today).
         val initial = vm.state
@@ -365,7 +411,7 @@ class DashboardViewModelTest {
         val t1 = Instant.parse("2026-06-21T08:00:00Z")
         val insertedId = db.foodEntryDao().insert(makeFoodEntry(t1, kcal = 400.0))
 
-        val vm = DashboardViewModel(repo, fixedDay)
+        val vm = viewModel(fixedDay)
 
         // Wait for entry to appear.
         val withFood = vm.state
@@ -399,7 +445,7 @@ class DashboardViewModelTest {
         )
         repo.commitTargets(committed, tdeeAtCheckinKcal = 2400.0)
 
-        val vm = DashboardViewModel(repo)
+        val vm = viewModel()
         val loaded = vm.state
             .filter { it is DashboardUiState.Loaded }
             .first() as DashboardUiState.Loaded
@@ -422,7 +468,7 @@ class DashboardViewModelTest {
             )
         )
 
-        val vm = DashboardViewModel(repo, fixedDay)
+        val vm = viewModel(fixedDay)
 
         // Wait for the two entries to appear in the day's food.
         val withFood = vm.dayFoods
@@ -448,7 +494,7 @@ class DashboardViewModelTest {
             listOf(NewFoodItem("Chicken", 250.0, 30.0, 5.0, 0.0, null))
         )
 
-        val vm = DashboardViewModel(repo, fixedDay)
+        val vm = viewModel(fixedDay)
 
         // Wait for two entries to appear.
         vm.dayFoods.filter { it.size == 2 }.first()
@@ -473,7 +519,7 @@ class DashboardViewModelTest {
             )
         )
 
-        val vm = DashboardViewModel(repo, fixedDay)
+        val vm = viewModel(fixedDay)
 
         // Wait for the source meal to appear before re-logging it elsewhere.
         vm.dayFoods.filter { it.size == 2 }.first()
@@ -499,7 +545,7 @@ class DashboardViewModelTest {
     @Test
     fun `checkinDue is true with no period and false right after a commit`() = runTest {
         // No period yet → due.
-        val vmDue = DashboardViewModel(repo)
+        val vmDue = viewModel()
         val due = vmDue.state
             .filter { it is DashboardUiState.Loaded }
             .first() as DashboardUiState.Loaded
@@ -507,7 +553,7 @@ class DashboardViewModelTest {
 
         // After committing a period dated today → not due.
         repo.commitTargets(repo.proposedTargets(), tdeeAtCheckinKcal = 2400.0)
-        val vmNotDue = DashboardViewModel(repo)
+        val vmNotDue = viewModel()
         val notDue = vmNotDue.state
             .filter { it is DashboardUiState.Loaded }
             .first() as DashboardUiState.Loaded
@@ -523,7 +569,14 @@ class DashboardViewModelTest {
         val freshDb = Room.inMemoryDatabaseBuilder(
             RuntimeEnvironment.getApplication(),
             AppDatabase::class.java,
-        ).allowMainThreadQueries().build()
+        ).allowMainThreadQueries()
+            // Room runs queries and invalidation-tracker callbacks on its own executors, so a
+            // Flow emission can dispatch to Main on a thread the test scheduler cannot drain —
+            // after the test ended, colliding with the next test's Dispatchers.setMain. Running
+            // both executors inline keeps all of that on the test thread.
+            .setQueryExecutor { it.run() }
+            .setTransactionExecutor { it.run() }
+            .build()
         val freshUserId = "reminder-user-5-day"
         val freshRepo = TdeeRepository(
             profileDao = freshDb.userProfileDao(),
@@ -535,6 +588,7 @@ class DashboardViewModelTest {
             currentUser = CurrentUser { freshUserId },
             zone = zone,
             clock = fixedClock,
+            ioDispatcher = testDispatcher,
         )
         freshDb.userProfileDao().upsert(makeProfile(goalRateKgPerWeek = -0.25).copy(userId = freshUserId))
         val weighInTs = fixedNow.minus(5, java.time.temporal.ChronoUnit.DAYS)
@@ -563,7 +617,14 @@ class DashboardViewModelTest {
         val freshDb = Room.inMemoryDatabaseBuilder(
             RuntimeEnvironment.getApplication(),
             AppDatabase::class.java,
-        ).allowMainThreadQueries().build()
+        ).allowMainThreadQueries()
+            // Room runs queries and invalidation-tracker callbacks on its own executors, so a
+            // Flow emission can dispatch to Main on a thread the test scheduler cannot drain —
+            // after the test ended, colliding with the next test's Dispatchers.setMain. Running
+            // both executors inline keeps all of that on the test thread.
+            .setQueryExecutor { it.run() }
+            .setTransactionExecutor { it.run() }
+            .build()
         val freshUserId = "reminder-user-1-day"
         val freshRepo = TdeeRepository(
             profileDao = freshDb.userProfileDao(),
@@ -575,6 +636,7 @@ class DashboardViewModelTest {
             currentUser = CurrentUser { freshUserId },
             zone = zone,
             clock = fixedClock,
+            ioDispatcher = testDispatcher,
         )
         freshDb.userProfileDao().upsert(makeProfile(goalRateKgPerWeek = -0.25).copy(userId = freshUserId))
         val weighInTs = fixedNow.minus(1, java.time.temporal.ChronoUnit.DAYS)
@@ -603,7 +665,14 @@ class DashboardViewModelTest {
         val freshDb = Room.inMemoryDatabaseBuilder(
             RuntimeEnvironment.getApplication(),
             AppDatabase::class.java,
-        ).allowMainThreadQueries().build()
+        ).allowMainThreadQueries()
+            // Room runs queries and invalidation-tracker callbacks on its own executors, so a
+            // Flow emission can dispatch to Main on a thread the test scheduler cannot drain —
+            // after the test ended, colliding with the next test's Dispatchers.setMain. Running
+            // both executors inline keeps all of that on the test thread.
+            .setQueryExecutor { it.run() }
+            .setTransactionExecutor { it.run() }
+            .build()
         val freshUserId = "reminder-user-no-samples"
         val freshRepo = TdeeRepository(
             profileDao = freshDb.userProfileDao(),
@@ -615,6 +684,7 @@ class DashboardViewModelTest {
             currentUser = CurrentUser { freshUserId },
             zone = zone,
             clock = fixedClock,
+            ioDispatcher = testDispatcher,
         )
         freshDb.userProfileDao().upsert(makeProfile(goalRateKgPerWeek = -0.25).copy(userId = freshUserId))
 
@@ -726,6 +796,71 @@ class DashboardViewModelTest {
     }
 
     // -----------------------------------------------------------------------
+    // 13. saveMealFromGroup / saveMealFromEntry — transient message
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `saveMealFromGroup on success sets a confirmation message naming the meal`() = runTest {
+        val mealId = repo.addFoodGroup(
+            listOf(NewFoodItem("Apple", 95.0, 0.5, 0.3, 25.0, null))
+        )
+        val vm = viewModel(fixedDay)
+        vm.dayFoods.filter { it.isNotEmpty() }.first()
+
+        vm.saveMealFromGroup(mealId, "Snack")
+
+        val message = vm.saveMealMessage.filter { it != null }.first()
+        assertEquals("Saved \"Snack\"", message)
+    }
+
+    @Test
+    fun `saveMealFromGroup with unknown mealId sets a failure message`() = runTest {
+        val vm = viewModel(fixedDay)
+
+        vm.saveMealFromGroup("no-such-meal-id", "Snack")
+
+        val message = vm.saveMealMessage.filter { it != null }.first()
+        assertEquals("Couldn't save — that entry no longer exists.", message)
+    }
+
+    @Test
+    fun `saveMealFromEntry on success sets a confirmation message naming the meal`() = runTest {
+        repo.addFood(name = "Apple", kcal = 95.0, proteinG = 0.5, fatG = 0.3, carbG = 25.0)
+        val entryId = db.foodEntryDao().getActive(userId).first().id
+        val vm = viewModel(fixedDay)
+
+        vm.saveMealFromEntry(entryId, "My Apple")
+
+        val message = vm.saveMealMessage.filter { it != null }.first()
+        assertEquals("Saved \"My Apple\"", message)
+    }
+
+    @Test
+    fun `saveMealFromEntry with unknown entryId sets a failure message`() = runTest {
+        val vm = viewModel(fixedDay)
+
+        vm.saveMealFromEntry(9999L, "Ghost")
+
+        val message = vm.saveMealMessage.filter { it != null }.first()
+        assertEquals("Couldn't save — that entry no longer exists.", message)
+    }
+
+    @Test
+    fun `clearSaveMealMessage resets the message to null`() = runTest {
+        val mealId = repo.addFoodGroup(
+            listOf(NewFoodItem("Apple", 95.0, 0.5, 0.3, 25.0, null))
+        )
+        val vm = viewModel(fixedDay)
+        vm.dayFoods.filter { it.isNotEmpty() }.first()
+        vm.saveMealFromGroup(mealId, "Snack")
+        vm.saveMealMessage.filter { it != null }.first()
+
+        vm.clearSaveMealMessage()
+
+        assertNull(vm.saveMealMessage.value)
+    }
+
+    // -----------------------------------------------------------------------
     // 12. Error state — load failure surfaces a message and retry recovers it
     // -----------------------------------------------------------------------
 
@@ -742,6 +877,7 @@ class DashboardViewModelTest {
             currentUser = CurrentUser { "no-such-user" },
             zone = zone,
             clock = fixedClock,
+            ioDispatcher = testDispatcher,
         )
         val vm = DashboardViewModel(noProfileRepo)
 
@@ -763,6 +899,7 @@ class DashboardViewModelTest {
             currentUser = CurrentUser { userId2 },
             zone = zone,
             clock = fixedClock,
+            ioDispatcher = testDispatcher,
         )
         val vm = DashboardViewModel(noProfileRepo)
         vm.state.filter { it is DashboardUiState.Error }.first()

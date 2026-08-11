@@ -192,6 +192,15 @@ class TdeeRepositorySavedMealTest {
         assertEquals(1.0, meals[0].items[1].factor, 0.001)
     }
 
+    @Test
+    fun `saveMealFromGroup with unknown mealId saves nothing and returns null`() = runTest {
+        val result = repo.saveMealFromGroup("Ghost", "no-such-meal-id")
+
+        assertNull("Unknown mealId should return null, not an id", result)
+        val meals = repo.observeSavedMeals().first()
+        assertTrue("No saved meal should be inserted", meals.isEmpty())
+    }
+
     // -----------------------------------------------------------------------
     // saveMealFromEntry
     // -----------------------------------------------------------------------
@@ -217,12 +226,12 @@ class TdeeRepositorySavedMealTest {
     }
 
     @Test
-    fun `saveMealFromEntry with unknown entryId creates an empty-item meal`() = runTest {
-        repo.saveMealFromEntry("Ghost", 9999L)
+    fun `saveMealFromEntry with unknown entryId saves nothing and returns null`() = runTest {
+        val result = repo.saveMealFromEntry("Ghost", 9999L)
 
+        assertNull("Unknown entryId should return null, not an id", result)
         val meals = repo.observeSavedMeals().first()
-        assertEquals(1, meals.size)
-        assertTrue(meals[0].items.isEmpty())
+        assertTrue("No saved meal should be inserted", meals.isEmpty())
     }
 
     // -----------------------------------------------------------------------

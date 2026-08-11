@@ -469,6 +469,73 @@ class ParseConfirmViewModelTest {
     }
 
     // -----------------------------------------------------------------------
+    // saveAsMeal / saveMealAndAdd surface mealSaveError on blank name / no items
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `saveAsMeal with blank name sets mealSaveError and does not save`() = runTest {
+        vm.setText("apple")
+        vm.parse()
+        vm.setKcal(0, "95")
+
+        vm.saveAsMeal("   ")
+
+        assertEquals("Enter a meal name before saving.", vm.state.value.mealSaveError)
+        assertTrue(repo.observeSavedMeals().first().isEmpty())
+    }
+
+    @Test
+    fun `saveAsMeal with no valid items sets mealSaveError and does not save`() = runTest {
+        vm.setText("apple")
+        vm.parse()
+        // kcal left blank -> no valid items.
+
+        vm.saveAsMeal("Snack")
+
+        assertEquals("Add at least one item before saving.", vm.state.value.mealSaveError)
+        assertTrue(repo.observeSavedMeals().first().isEmpty())
+    }
+
+    @Test
+    fun `saveAsMeal success clears a prior mealSaveError`() = runTest {
+        vm.setText("apple")
+        vm.parse()
+        vm.saveAsMeal("Snack") // fails: no valid items yet
+
+        vm.setKcal(0, "95")
+        vm.saveAsMeal("Snack")
+        vm.mealSaved.filter { it }.first()
+
+        assertNull(vm.state.value.mealSaveError)
+    }
+
+    @Test
+    fun `saveMealAndAdd with blank name sets mealSaveError and does not save or add`() = runTest {
+        vm.setText("apple")
+        vm.parse()
+        vm.setKcal(0, "95")
+
+        vm.saveMealAndAdd("")
+
+        assertEquals("Enter a meal name before saving.", vm.state.value.mealSaveError)
+        assertTrue(repo.observeSavedMeals().first().isEmpty())
+        assertEquals(0, repo.todayFoodEntries().size)
+    }
+
+    @Test
+    fun `saveMealAndAdd with no valid items sets mealSaveError and does not save or add`() = runTest {
+        vm.setText("apple")
+        vm.parse()
+        // kcal left blank -> no valid items.
+
+        vm.saveMealAndAdd("Snack")
+
+        assertEquals("Add at least one item before saving.", vm.state.value.mealSaveError)
+        assertTrue(repo.observeSavedMeals().first().isEmpty())
+        assertEquals(0, repo.todayFoodEntries().size)
+    }
+
+    // -----------------------------------------------------------------------
     // Parse failures surface as a dismissible error (and clear on a later success)
     // -----------------------------------------------------------------------
 

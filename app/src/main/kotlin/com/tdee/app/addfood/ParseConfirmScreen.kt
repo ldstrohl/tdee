@@ -256,6 +256,14 @@ fun ParseConfirmScreen(
             )
         }
 
+        state.mealSaveError?.let { error ->
+            Text(
+                error,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+
         OutlinedButton(
             onClick = { showSaveAsMealDialog = true },
             enabled = state.canSave,

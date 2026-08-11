@@ -85,6 +85,17 @@ class DashboardViewModel(
     // One-shot state for TDEE/targets/trend (not reactive — these require heavy engine compute).
     private val _loadedBase = MutableStateFlow<LoadedBase?>(null)
 
+    /**
+     * Transient result of the most recent save-meal action, for a one-shot Toast (mirrors the
+     * Toast pattern `SettingsRoute` uses for export status). Null when there is nothing to show.
+     * The screen should call [clearSaveMealMessage] after displaying it.
+     */
+    private val _saveMealMessage = MutableStateFlow<String?>(null)
+    val saveMealMessage: StateFlow<String?> = _saveMealMessage.asStateFlow()
+
+    /** Dismisses the current save-meal message so it isn't shown again on recomposition. */
+    fun clearSaveMealMessage() { _saveMealMessage.value = null }
+
     /** Error message from the most recent failed [load], cleared at the start of each attempt. */
     private val _loadError = MutableStateFlow<String?>(null)
 
@@ -149,11 +160,25 @@ class DashboardViewModel(
     }
 
     fun saveMealFromGroup(mealId: String, name: String) {
-        viewModelScope.launch { repo.saveMealFromGroup(name, mealId) }
+        viewModelScope.launch {
+            val id = repo.saveMealFromGroup(name, mealId)
+            _saveMealMessage.value = if (id != null) {
+                "Saved \"$name\""
+            } else {
+                "Couldn't save — that entry no longer exists."
+            }
+        }
     }
 
     fun saveMealFromEntry(entryId: Long, name: String) {
-        viewModelScope.launch { repo.saveMealFromEntry(name, entryId) }
+        viewModelScope.launch {
+            val id = repo.saveMealFromEntry(name, entryId)
+            _saveMealMessage.value = if (id != null) {
+                "Saved \"$name\""
+            } else {
+                "Couldn't save — that entry no longer exists."
+            }
+        }
     }
 
     fun renameMeal(mealId: String, name: String) {

@@ -63,6 +63,8 @@ data class ParseConfirmState(
     val parseError: String? = null,
     /** Meal name suggested by the parser, if any; prefills the meal-name field. */
     val mealName: String? = null,
+    /** Non-null when the last saveAsMeal/saveMealAndAdd call was rejected (blank name/no items). */
+    val mealSaveError: String? = null,
 ) {
     /** Save All is enabled when at least one item is valid. Invalid items are skipped on save. */
     val canSave: Boolean get() = items.any { it.isValid }
@@ -128,7 +130,7 @@ class ParseConfirmViewModel(
 
     fun setText(v: String) {
         _mealSaved.value = false
-        _state.update { it.copy(text = v) }
+        _state.update { it.copy(text = v, mealSaveError = null) }
     }
 
     fun setSelectedDate(date: LocalDate) {
@@ -139,7 +141,7 @@ class ParseConfirmViewModel(
         val text = _state.value.text
         if (text.isBlank()) return
         viewModelScope.launch {
-            _state.update { it.copy(parsing = true, parseError = null) }
+            _state.update { it.copy(parsing = true, parseError = null, mealSaveError = null) }
             when (val result = parser.parse(text)) {
                 is ParseResult.Success -> _state.update {
                     it.copy(
@@ -168,7 +170,10 @@ class ParseConfirmViewModel(
         _mealSaved.value = false
         _state.update { s ->
             if (index !in s.items.indices) return@update s
-            s.copy(items = s.items.toMutableList().also { it[index] = transform(it[index]) })
+            s.copy(
+                items = s.items.toMutableList().also { it[index] = transform(it[index]) },
+                mealSaveError = null,
+            )
         }
     }
 
@@ -180,11 +185,14 @@ class ParseConfirmViewModel(
     fun setGrams(index: Int, v: String) = updateItem(index) { it.copy(grams = v) }
     fun setFactor(index: Int, v: String) = updateItem(index) { it.copy(factor = v) }
 
-    fun addItem() = _state.update { it.copy(items = it.items + EditableFoodItem()) }
+    fun addItem() = _state.update { it.copy(items = it.items + EditableFoodItem(), mealSaveError = null) }
 
     fun removeItem(index: Int) = _state.update { s ->
         if (index !in s.items.indices) return@update s
-        s.copy(items = s.items.toMutableList().also { it.removeAt(index) })
+        s.copy(
+            items = s.items.toMutableList().also { it.removeAt(index) },
+            mealSaveError = null,
+        )
     }
 
     // -----------------------------------------------------------------------
@@ -216,20 +224,33 @@ class ParseConfirmViewModel(
 
     /** Saves the current valid items to the saved-meals library under [name]. */
     fun saveAsMeal(name: String) {
-        if (name.isBlank()) return
+        if (name.isBlank()) {
+            _state.update { it.copy(mealSaveError = "Enter a meal name before saving.") }
+            return
+        }
         val items = validItems()
-        if (items.isEmpty()) return
+        if (items.isEmpty()) {
+            _state.update { it.copy(mealSaveError = "Add at least one item before saving.") }
+            return
+        }
         viewModelScope.launch {
             repo.saveMeal(name.trim(), items)
             _mealSaved.value = true
+            _state.update { it.copy(mealSaveError = null) }
         }
     }
 
     /** Saves to the library AND adds the group with [name] as the meal name, then navigates away. */
     fun saveMealAndAdd(name: String) {
-        if (name.isBlank()) return
+        if (name.isBlank()) {
+            _state.update { it.copy(mealSaveError = "Enter a meal name before saving.") }
+            return
+        }
         val items = validItems()
-        if (items.isEmpty()) return
+        if (items.isEmpty()) {
+            _state.update { it.copy(mealSaveError = "Add at least one item before saving.") }
+            return
+        }
         viewModelScope.launch {
             val trimmed = name.trim()
             val date = selectedDate.value.takeUnless { it == LocalDate.now() }
@@ -237,6 +258,7 @@ class ParseConfirmViewModel(
             repo.addFoodGroup(items, date, trimmed)
             _mealSaved.value = true
             _saved.value = true
+            _state.update { it.copy(mealSaveError = null) }
         }
     }
 
