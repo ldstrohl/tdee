@@ -179,7 +179,10 @@ fun BackupScreen(
 private fun ConnectRow(onConnect: () -> Unit, label: String = "Connect Google Drive") {
     SettingsEntry(
         title = label,
-        subtitle = "Grants this app access to a private \"TDEE Backups\" folder in your Drive",
+        // The scope is drive.file, so this app can only ever see files it created itself — but the
+        // folder is a normal visible one, deliberately, so backups can be inspected and recovered
+        // by hand. Don't call it "private": that would describe the hidden appDataFolder instead.
+        subtitle = "Creates a \"TDEE Backups\" folder in your Drive. This app can only see files it creates.",
         onClick = onConnect,
     )
 }
