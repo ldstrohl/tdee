@@ -60,7 +60,14 @@ class EditFoodEntryViewModelTest {
         db = Room.inMemoryDatabaseBuilder(
             RuntimeEnvironment.getApplication(),
             AppDatabase::class.java,
-        ).allowMainThreadQueries().build()
+        ).allowMainThreadQueries()
+            // Room runs queries and invalidation-tracker callbacks on its own executors, so a
+            // Flow emission can dispatch to Main on a thread the test scheduler cannot drain —
+            // after the test ended, colliding with the next test's Dispatchers.setMain. Running
+            // both executors inline keeps all of that on the test thread.
+            .setQueryExecutor { it.run() }
+            .setTransactionExecutor { it.run() }
+            .build()
 
         db.userProfileDao().upsert(
             UserProfileEntity(
@@ -87,6 +94,7 @@ class EditFoodEntryViewModelTest {
             currentUser = fakeCurrentUser,
             zone = zone,
             clock = fixedClock,
+            ioDispatcher = testDispatcher,
         )
     }
 

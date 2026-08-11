@@ -567,7 +567,7 @@ class TdeeRepository(
      * log-day, not today). If [mealId] has no existing entries for this user, or [items] is empty,
      * this is a no-op. Returns true if items were actually inserted, false on the no-op paths.
      */
-    suspend fun addItemsToMeal(mealId: String, items: List<NewFoodItem>): Boolean = withContext(Dispatchers.IO) {
+    suspend fun addItemsToMeal(mealId: String, items: List<NewFoodItem>): Boolean = withContext(ioDispatcher) {
         if (items.isEmpty()) return@withContext false
         val uid = currentUser.userId()
         val existing = foodDao.getByMeal(uid, mealId)
