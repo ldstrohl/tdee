@@ -10,6 +10,7 @@ import com.tdee.domain.TdeeEstimate
 import com.tdee.domain.TdeeMethod
 import com.tdee.domain.UserProfile
 import com.tdee.domain.kgToLb
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
@@ -81,6 +82,7 @@ class TdeeRepository(
     private val currentUser: CurrentUser,
     private val zone: ZoneId = ZoneId.systemDefault(),
     private val clock: Clock = Clock.systemDefaultZone(),
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
 
     // -----------------------------------------------------------------------
@@ -138,12 +140,12 @@ class TdeeRepository(
     // -----------------------------------------------------------------------
 
     /** Returns the current TDEE estimate evaluated at [clock]'s current instant. */
-    suspend fun currentEstimate(): TdeeEstimate = withContext(Dispatchers.IO) {
+    suspend fun currentEstimate(): TdeeEstimate = withContext(ioDispatcher) {
         computeEngineSnapshot().estimate
     }
 
     /** Returns the current EMA trend weight in kg evaluated at [clock]'s current instant. */
-    suspend fun currentTrendKg(): Double = withContext(Dispatchers.IO) {
+    suspend fun currentTrendKg(): Double = withContext(ioDispatcher) {
         computeEngineSnapshot().trendKg
     }
 
@@ -151,7 +153,7 @@ class TdeeRepository(
      * Derives daily calorie/macro targets from the current estimate and profile goal.
      * Builds the engine once internally to avoid redundant DB reads.
      */
-    suspend fun proposedTargets(): Targets = withContext(Dispatchers.IO) {
+    suspend fun proposedTargets(): Targets = withContext(ioDispatcher) {
         val snapshot = computeEngineSnapshot()
         TargetCalculator.targets(snapshot.estimate, snapshot.trendKg, snapshot.profile)
     }
@@ -162,7 +164,7 @@ class TdeeRepository(
      * all derived from a single engine build instead of the three separate calls
      * [currentEstimate]/[currentTrendKg]/[activeTargets] would each perform on their own.
      */
-    suspend fun dashboardSnapshot(): DashboardSnapshot = withContext(Dispatchers.IO) {
+    suspend fun dashboardSnapshot(): DashboardSnapshot = withContext(ioDispatcher) {
         val snapshot = computeEngineSnapshot()
         val proposed = TargetCalculator.targets(snapshot.estimate, snapshot.trendKg, snapshot.profile)
         val uid = currentUser.userId()
@@ -181,7 +183,7 @@ class TdeeRepository(
      * Falls back to the live [proposedTargets] when the user has no period yet — i.e. before the
      * first check-in or manual edit exists, the dashboard shows what the engine recommends.
      */
-    suspend fun activeTargets(): Targets = withContext(Dispatchers.IO) {
+    suspend fun activeTargets(): Targets = withContext(ioDispatcher) {
         val uid = currentUser.userId()
         targetDao.getLatest(uid)?.toTargets() ?: proposedTargets()
     }
@@ -194,7 +196,7 @@ class TdeeRepository(
      * Drives the weekly "check-in due" prompt; the app never acts on this on its own — it only
      * surfaces the flag for the user to accept.
      */
-    suspend fun checkinDue(): Boolean = withContext(Dispatchers.IO) {
+    suspend fun checkinDue(): Boolean = withContext(ioDispatcher) {
         val uid = currentUser.userId()
         val latest = targetDao.getLatest(uid) ?: return@withContext true
         val profileEntity = profileDao.get(uid)
@@ -207,7 +209,7 @@ class TdeeRepository(
      * Days between today's log-day and the log-day of the most recent weight entry, or null if the
      * user has no weight entries yet. Drives the "weigh-in reminder" dashboard nudge.
      */
-    suspend fun daysSinceLastWeighIn(): Long? = withContext(Dispatchers.IO) {
+    suspend fun daysSinceLastWeighIn(): Long? = withContext(ioDispatcher) {
         val uid = currentUser.userId()
         val latestTimestamp = weightDao.getLatestTimestamp(uid) ?: return@withContext null
         val profileEntity = profileDao.get(uid)
@@ -226,7 +228,7 @@ class TdeeRepository(
      * (the in-progress day is excluded). `last7AvgIntakeKcal` averages COMPLETE intake days in
      * `[today-7 .. today-1]`; `trendChangeLb` is EMA(today) − EMA(today − 7 days) converted to lb.
      */
-    suspend fun proposeCheckin(): CheckinProposal = withContext(Dispatchers.IO) {
+    suspend fun proposeCheckin(): CheckinProposal = withContext(ioDispatcher) {
         val uid = currentUser.userId()
         val (engine, profile) = buildEngine()
         val now = clock.instant()
@@ -275,7 +277,7 @@ class TdeeRepository(
      * snapshot of what we believed when targets were set, and stamps `acceptedAt = clock.instant()`.
      */
     suspend fun commitTargets(targets: Targets, tdeeAtCheckinKcal: Double) =
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             val uid = currentUser.userId()
             val profileEntity = profileDao.get(uid)
                 ?: throw IllegalStateException("No user profile")
@@ -303,7 +305,7 @@ class TdeeRepository(
      * @param goalKg target body weight in kg.
      */
     suspend fun project(scenarioIntakeKcal: Double, goalKg: Double): Projection =
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             val (engine, profile) = buildEngine()
             val now = clock.instant()
             val estimate = engine.estimateAt(now)
@@ -326,7 +328,7 @@ class TdeeRepository(
      *
      * No-op if there are no weight samples.
      */
-    suspend fun recomputeTrendCache() = withContext(Dispatchers.IO) {
+    suspend fun recomputeTrendCache() = withContext(ioDispatcher) {
         val uid = currentUser.userId()
         val profileEntity = profileDao.get(uid)
             ?: throw IllegalStateException("No user profile")
@@ -391,7 +393,7 @@ class TdeeRepository(
      * [clock]'s current instant if no row exists yet) and sets [UserProfileEntity.updatedAt]
      * to [clock]'s current instant. Call after onboarding from the Edit Profile screen.
      */
-    suspend fun updateProfile(profile: UserProfileEntity) = withContext(Dispatchers.IO) {
+    suspend fun updateProfile(profile: UserProfileEntity) = withContext(ioDispatcher) {
         val uid = currentUser.userId()
         val now = clock.instant()
         val existing = profileDao.get(uid)
@@ -413,7 +415,7 @@ class TdeeRepository(
     suspend fun saveProfileAndSeedWeight(
         profile: UserProfileEntity,
         seedWeightKg: Double,
-    ) = withContext(Dispatchers.IO) {
+    ) = withContext(ioDispatcher) {
         val uid = currentUser.userId()
         val now = clock.instant()
         val scopedProfile = profile.copy(userId = uid)
@@ -436,7 +438,7 @@ class TdeeRepository(
      *
      * "Today" is the log-day that contains [clock]'s current instant.
      */
-    suspend fun todayConsumed(): DailyIntake? = withContext(Dispatchers.IO) {
+    suspend fun todayConsumed(): DailyIntake? = withContext(ioDispatcher) {
         val uid = currentUser.userId()
         val profileEntity = profileDao.get(uid) ?: return@withContext null
         val today = logDay(clock.instant(), zone, profileEntity.dayStartHour)
@@ -475,7 +477,7 @@ class TdeeRepository(
         mealId: String? = null,
         loggedDate: LocalDate? = null,
         factor: Double = 1.0,
-    ) = withContext(Dispatchers.IO) {
+    ) = withContext(ioDispatcher) {
         val uid = currentUser.userId()
         val profileEntity = profileDao.get(uid)
         val dayStartHour = profileEntity?.dayStartHour ?: 0
@@ -520,7 +522,7 @@ class TdeeRepository(
         items: List<NewFoodItem>,
         loggedDate: LocalDate? = null,
         mealName: String? = null,
-    ): String = withContext(Dispatchers.IO) {
+    ): String = withContext(ioDispatcher) {
         if (items.isEmpty()) return@withContext UUID.randomUUID().toString()
         val uid = currentUser.userId()
         val profileEntity = profileDao.get(uid)
@@ -570,7 +572,7 @@ class TdeeRepository(
     suspend fun addFoodItems(
         items: List<NewFoodItem>,
         loggedDate: LocalDate? = null,
-    ) = withContext(Dispatchers.IO) {
+    ) = withContext(ioDispatcher) {
         if (items.isEmpty()) return@withContext
         val uid = currentUser.userId()
         val profileEntity = profileDao.get(uid)
@@ -608,7 +610,7 @@ class TdeeRepository(
     }
 
     /** Returns the [FoodEntryEntity] with the given [id], or null if not found. */
-    suspend fun getFoodEntry(id: Long): FoodEntryEntity? = withContext(Dispatchers.IO) {
+    suspend fun getFoodEntry(id: Long): FoodEntryEntity? = withContext(ioDispatcher) {
         foodDao.getById(id)
     }
 
@@ -628,7 +630,7 @@ class TdeeRepository(
         fatG: Double,
         carbG: Double,
         grams: Double?,
-    ) = withContext(Dispatchers.IO) {
+    ) = withContext(ioDispatcher) {
         val existing = foodDao.getById(id) ?: return@withContext
         foodDao.update(
             existing.copy(
@@ -648,7 +650,7 @@ class TdeeRepository(
      * Renames the food entry with [id]. No-op if the entry doesn't exist.
      * Only [FoodEntryEntity.name] changes; bumps [FoodEntryEntity.updatedAt].
      */
-    suspend fun renameFood(id: Long, name: String) = withContext(Dispatchers.IO) {
+    suspend fun renameFood(id: Long, name: String) = withContext(ioDispatcher) {
         val existing = foodDao.getById(id) ?: return@withContext
         foodDao.update(existing.copy(name = name, updatedAt = clock.instant()))
     }
@@ -657,14 +659,14 @@ class TdeeRepository(
      * Renames the meal group [mealId] for the current user by stamping the new
      * [FoodEntryEntity.mealName] onto every row of the group.
      */
-    suspend fun renameMeal(mealId: String, name: String) = withContext(Dispatchers.IO) {
+    suspend fun renameMeal(mealId: String, name: String) = withContext(ioDispatcher) {
         foodDao.renameMeal(currentUser.userId(), mealId, name, clock.instant())
     }
 
     /**
      * Soft-deletes all food entries belonging to [mealId] for the current user.
      */
-    suspend fun softDeleteMeal(mealId: String) = withContext(Dispatchers.IO) {
+    suspend fun softDeleteMeal(mealId: String) = withContext(ioDispatcher) {
         foodDao.softDeleteByMeal(currentUser.userId(), mealId, clock.instant())
     }
 
@@ -672,7 +674,7 @@ class TdeeRepository(
      * Soft-deletes the food entry with the given [id] by setting its [FoodEntryEntity.deletedAt]
      * to [clock]'s current instant.
      */
-    suspend fun softDeleteFood(id: Long) = withContext(Dispatchers.IO) {
+    suspend fun softDeleteFood(id: Long) = withContext(ioDispatcher) {
         foodDao.softDelete(id, clock.instant())
     }
 
@@ -710,7 +712,7 @@ class TdeeRepository(
      *
      * Returns an empty list when the profile has no entries for today or no profile exists.
      */
-    suspend fun todayFoodEntries(): List<FoodEntryEntity> = withContext(Dispatchers.IO) {
+    suspend fun todayFoodEntries(): List<FoodEntryEntity> = withContext(ioDispatcher) {
         val uid = currentUser.userId()
         val profileEntity = profileDao.get(uid) ?: return@withContext emptyList()
         val dayStart = logDay(clock.instant(), zone, profileEntity.dayStartHour)
@@ -724,7 +726,7 @@ class TdeeRepository(
      * Returns the summed macros for today's food entries.
      * All fields are 0.0 when no entries exist for today.
      */
-    suspend fun todayConsumedMacros(): ConsumedMacros = withContext(Dispatchers.IO) {
+    suspend fun todayConsumedMacros(): ConsumedMacros = withContext(ioDispatcher) {
         val entries = todayFoodEntries()
         ConsumedMacros(
             kcal = entries.sumOf { it.kcal },
@@ -743,7 +745,7 @@ class TdeeRepository(
      * @return the auto-generated saved meal id.
      */
     suspend fun saveMeal(name: String, items: List<NewFoodItem>): Long =
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             val uid = currentUser.userId()
             savedMealDao.insert(
                 SavedMealEntity(
@@ -767,7 +769,7 @@ class TdeeRepository(
      *   (nothing is saved in that case).
      */
     suspend fun saveMealFromGroup(name: String, mealId: String): Long? =
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             val uid = currentUser.userId()
             val entries = foodDao.getByMeal(uid, mealId)
             if (entries.isEmpty()) return@withContext null
@@ -795,7 +797,7 @@ class TdeeRepository(
      *   entry (nothing is saved in that case).
      */
     suspend fun saveMealFromEntry(name: String, entryId: Long): Long? =
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             val uid = currentUser.userId()
             val entry = foodDao.getById(entryId) ?: return@withContext null
             savedMealDao.insert(
@@ -820,7 +822,7 @@ class TdeeRepository(
         savedMealDao.observeForUser(currentUser.userId())
 
     /** Deletes the saved meal with [id]. */
-    suspend fun deleteSavedMeal(id: Long) = withContext(Dispatchers.IO) {
+    suspend fun deleteSavedMeal(id: Long) = withContext(ioDispatcher) {
         savedMealDao.deleteById(id)
     }
 
@@ -834,7 +836,7 @@ class TdeeRepository(
         loggedDate: LocalDate? = null,
         factor: Double = 1.0,
     ): String =
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             val meal = savedMealDao.getById(savedMealId) ?: return@withContext ""
             val items = meal.items.map {
                 NewFoodItem(
@@ -862,7 +864,7 @@ class TdeeRepository(
      *   saved-before-logged, then most-recent-first, and capped at [limit].
      */
     suspend fun searchMeals(query: String, limit: Int = 50): List<MealSearchResult> =
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             val uid = currentUser.userId()
             val q = query.trim()
 
@@ -1000,7 +1002,7 @@ class TdeeRepository(
      * Returns the non-deleted food entries whose log-day equals [date] for the current user.
      */
     suspend fun foodEntriesForDate(date: LocalDate): List<FoodEntryEntity> =
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             val uid = currentUser.userId()
             val profileEntity = profileDao.get(uid) ?: return@withContext emptyList()
             val windowStart = logDayStart(date, profileEntity.dayStartHour)
@@ -1014,7 +1016,7 @@ class TdeeRepository(
      * @return the new mealId.
      */
     suspend fun repeatMeal(mealId: String, targetDate: LocalDate? = null, factor: Double = 1.0): String =
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             val uid = currentUser.userId()
             val entries = foodDao.getByMeal(uid, mealId)
             val sourceMealName = entries.firstOrNull()?.mealName
@@ -1034,7 +1036,7 @@ class TdeeRepository(
      * scaling it by [factor] (1.0 = no change, e.g. 1.5 = "50% more than the estimate").
      */
     suspend fun repeatEntry(id: Long, targetDate: LocalDate? = null, factor: Double = 1.0) =
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             val entry = foodDao.getById(id) ?: return@withContext
             val item = NewFoodItem(
                 name = entry.name, kcal = entry.kcal, proteinG = entry.proteinG,
@@ -1058,7 +1060,7 @@ class TdeeRepository(
     /**
      * Returns the non-deleted food entries belonging to [mealId] for the current user.
      */
-    suspend fun mealEntries(mealId: String): List<FoodEntryEntity> = withContext(Dispatchers.IO) {
+    suspend fun mealEntries(mealId: String): List<FoodEntryEntity> = withContext(ioDispatcher) {
         foodDao.getByMeal(currentUser.userId(), mealId)
     }
 
@@ -1074,7 +1076,7 @@ class TdeeRepository(
      * [FoodEntryEntity.grams] uses `0.0` as the "unknown" sentinel, which multiplication preserves.
      * Empty meal is a no-op.
      */
-    suspend fun scaleMeal(mealId: String, factor: Double) = withContext(Dispatchers.IO) {
+    suspend fun scaleMeal(mealId: String, factor: Double) = withContext(ioDispatcher) {
         val uid = currentUser.userId()
         val entries = foodDao.getByMeal(uid, mealId)
         entries.forEach { entry ->
@@ -1096,7 +1098,7 @@ class TdeeRepository(
      * if the entry doesn't exist. [FoodEntryEntity.grams] uses `0.0` as the "unknown" sentinel,
      * which multiplication preserves.
      */
-    suspend fun scaleFood(id: Long, factor: Double) = withContext(Dispatchers.IO) {
+    suspend fun scaleFood(id: Long, factor: Double) = withContext(ioDispatcher) {
         val existing = foodDao.getById(id) ?: return@withContext
         foodDao.update(
             existing.copy(
@@ -1125,7 +1127,7 @@ class TdeeRepository(
      *   When null, the entry is timestamped at [clock]'s current instant (current behavior).
      */
     suspend fun addWeight(weightLb: Double, loggedDate: LocalDate? = null) =
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             val uid = currentUser.userId()
             val profileEntity = profileDao.get(uid)
             val dayStartHour = profileEntity?.dayStartHour ?: 0
@@ -1214,7 +1216,7 @@ class TdeeRepository(
      * If no complete days exist in the window (non-TODAY), all macro/calorie fields are 0.0
      * and [MacroSummary.completeDays] = 0.
      */
-    suspend fun macroSummary(window: ChartWindow): MacroSummary = withContext(Dispatchers.IO) {
+    suspend fun macroSummary(window: ChartWindow): MacroSummary = withContext(ioDispatcher) {
         val uid = currentUser.userId()
         val profileEntity = profileDao.get(uid)
             ?: throw IllegalStateException("No user profile")
@@ -1329,7 +1331,7 @@ class TdeeRepository(
      *
      * Existing data is NOT cleared before seeding — call on a fresh user or wipe manually.
      */
-    suspend fun seedSampleData() = withContext(Dispatchers.IO) {
+    suspend fun seedSampleData() = withContext(ioDispatcher) {
         val uid = currentUser.userId()
         val profileEntity = profileDao.get(uid)
             ?: throw IllegalStateException("No user profile")

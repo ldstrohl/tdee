@@ -105,7 +105,14 @@ class DashboardViewModelTest {
         db = Room.inMemoryDatabaseBuilder(
             RuntimeEnvironment.getApplication(),
             AppDatabase::class.java,
-        ).allowMainThreadQueries().build()
+        ).allowMainThreadQueries()
+            // Room runs queries and invalidation-tracker callbacks on its own executors, so a
+            // Flow emission can dispatch to Main on a thread the test scheduler cannot drain —
+            // after the test ended, colliding with the next test's Dispatchers.setMain. Running
+            // both executors inline keeps all of that on the test thread.
+            .setQueryExecutor { it.run() }
+            .setTransactionExecutor { it.run() }
+            .build()
 
         db.userProfileDao().upsert(makeProfile(goalRateKgPerWeek = -0.25))
 
@@ -137,6 +144,7 @@ class DashboardViewModelTest {
             currentUser = fakeCurrentUser,
             zone = zone,
             clock = fixedClock,
+            ioDispatcher = testDispatcher,
         )
     }
 
@@ -283,7 +291,14 @@ class DashboardViewModelTest {
         val freshDb = Room.inMemoryDatabaseBuilder(
             RuntimeEnvironment.getApplication(),
             AppDatabase::class.java,
-        ).allowMainThreadQueries().build()
+        ).allowMainThreadQueries()
+            // Room runs queries and invalidation-tracker callbacks on its own executors, so a
+            // Flow emission can dispatch to Main on a thread the test scheduler cannot drain —
+            // after the test ended, colliding with the next test's Dispatchers.setMain. Running
+            // both executors inline keeps all of that on the test thread.
+            .setQueryExecutor { it.run() }
+            .setTransactionExecutor { it.run() }
+            .build()
 
         val freshUserId = "fresh-routing-user"
         val freshRepo = TdeeRepository(
@@ -296,6 +311,7 @@ class DashboardViewModelTest {
             currentUser = CurrentUser { freshUserId },
             zone = zone,
             clock = fixedClock,
+            ioDispatcher = testDispatcher,
         )
 
         // Before save: emits null.
@@ -553,7 +569,14 @@ class DashboardViewModelTest {
         val freshDb = Room.inMemoryDatabaseBuilder(
             RuntimeEnvironment.getApplication(),
             AppDatabase::class.java,
-        ).allowMainThreadQueries().build()
+        ).allowMainThreadQueries()
+            // Room runs queries and invalidation-tracker callbacks on its own executors, so a
+            // Flow emission can dispatch to Main on a thread the test scheduler cannot drain —
+            // after the test ended, colliding with the next test's Dispatchers.setMain. Running
+            // both executors inline keeps all of that on the test thread.
+            .setQueryExecutor { it.run() }
+            .setTransactionExecutor { it.run() }
+            .build()
         val freshUserId = "reminder-user-5-day"
         val freshRepo = TdeeRepository(
             profileDao = freshDb.userProfileDao(),
@@ -565,6 +588,7 @@ class DashboardViewModelTest {
             currentUser = CurrentUser { freshUserId },
             zone = zone,
             clock = fixedClock,
+            ioDispatcher = testDispatcher,
         )
         freshDb.userProfileDao().upsert(makeProfile(goalRateKgPerWeek = -0.25).copy(userId = freshUserId))
         val weighInTs = fixedNow.minus(5, java.time.temporal.ChronoUnit.DAYS)
@@ -593,7 +617,14 @@ class DashboardViewModelTest {
         val freshDb = Room.inMemoryDatabaseBuilder(
             RuntimeEnvironment.getApplication(),
             AppDatabase::class.java,
-        ).allowMainThreadQueries().build()
+        ).allowMainThreadQueries()
+            // Room runs queries and invalidation-tracker callbacks on its own executors, so a
+            // Flow emission can dispatch to Main on a thread the test scheduler cannot drain —
+            // after the test ended, colliding with the next test's Dispatchers.setMain. Running
+            // both executors inline keeps all of that on the test thread.
+            .setQueryExecutor { it.run() }
+            .setTransactionExecutor { it.run() }
+            .build()
         val freshUserId = "reminder-user-1-day"
         val freshRepo = TdeeRepository(
             profileDao = freshDb.userProfileDao(),
@@ -605,6 +636,7 @@ class DashboardViewModelTest {
             currentUser = CurrentUser { freshUserId },
             zone = zone,
             clock = fixedClock,
+            ioDispatcher = testDispatcher,
         )
         freshDb.userProfileDao().upsert(makeProfile(goalRateKgPerWeek = -0.25).copy(userId = freshUserId))
         val weighInTs = fixedNow.minus(1, java.time.temporal.ChronoUnit.DAYS)
@@ -633,7 +665,14 @@ class DashboardViewModelTest {
         val freshDb = Room.inMemoryDatabaseBuilder(
             RuntimeEnvironment.getApplication(),
             AppDatabase::class.java,
-        ).allowMainThreadQueries().build()
+        ).allowMainThreadQueries()
+            // Room runs queries and invalidation-tracker callbacks on its own executors, so a
+            // Flow emission can dispatch to Main on a thread the test scheduler cannot drain —
+            // after the test ended, colliding with the next test's Dispatchers.setMain. Running
+            // both executors inline keeps all of that on the test thread.
+            .setQueryExecutor { it.run() }
+            .setTransactionExecutor { it.run() }
+            .build()
         val freshUserId = "reminder-user-no-samples"
         val freshRepo = TdeeRepository(
             profileDao = freshDb.userProfileDao(),
@@ -645,6 +684,7 @@ class DashboardViewModelTest {
             currentUser = CurrentUser { freshUserId },
             zone = zone,
             clock = fixedClock,
+            ioDispatcher = testDispatcher,
         )
         freshDb.userProfileDao().upsert(makeProfile(goalRateKgPerWeek = -0.25).copy(userId = freshUserId))
 
@@ -837,6 +877,7 @@ class DashboardViewModelTest {
             currentUser = CurrentUser { "no-such-user" },
             zone = zone,
             clock = fixedClock,
+            ioDispatcher = testDispatcher,
         )
         val vm = DashboardViewModel(noProfileRepo)
 
@@ -858,6 +899,7 @@ class DashboardViewModelTest {
             currentUser = CurrentUser { userId2 },
             zone = zone,
             clock = fixedClock,
+            ioDispatcher = testDispatcher,
         )
         val vm = DashboardViewModel(noProfileRepo)
         vm.state.filter { it is DashboardUiState.Error }.first()

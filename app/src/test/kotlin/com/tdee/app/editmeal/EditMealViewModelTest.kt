@@ -1,5 +1,8 @@
 package com.tdee.app.editmeal
 
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelStore
 import androidx.room.Room
 import com.tdee.app.data.AppDatabase
 import com.tdee.app.data.CurrentUser
@@ -56,6 +59,27 @@ class EditMealViewModelTest {
 
     private val testDispatcher = UnconfinedTestDispatcher()
 
+    /**
+     * ViewModels created by a test. Each one starts eager `stateIn` collectors on its
+     * viewModelScope; if they are still live when the next test calls `Dispatchers.setMain`,
+     * the Main dispatcher is being reset while in use and an unrelated test fails with
+     * "Dispatchers.Main is used concurrently with setting it". Clearing them in teardown
+     * cancels those scopes, so tests stop leaking coroutines into each other.
+     */
+    private val viewModelStore = ViewModelStore()
+    private var viewModelKey = 0
+
+    @Suppress("UNCHECKED_CAST")
+    private fun viewModel(mealId: String): EditMealViewModel {
+        val factory = object : ViewModelProvider.Factory {
+            override fun <T : ViewModel> create(modelClass: Class<T>): T =
+                EditMealViewModel(repo, mealId) as T
+        }
+        return ViewModelProvider(viewModelStore, factory)[
+            "vm-${viewModelKey++}", EditMealViewModel::class.java,
+        ]
+    }
+
     @Before
     fun setup() = runTest {
         Dispatchers.setMain(testDispatcher)
@@ -63,7 +87,14 @@ class EditMealViewModelTest {
         db = Room.inMemoryDatabaseBuilder(
             RuntimeEnvironment.getApplication(),
             AppDatabase::class.java,
-        ).allowMainThreadQueries().build()
+        ).allowMainThreadQueries()
+            // Room runs queries and invalidation-tracker callbacks on its own executors, so a
+            // Flow emission can dispatch to Main on a thread the test scheduler cannot drain —
+            // after the test ended, colliding with the next test's Dispatchers.setMain. Running
+            // both executors inline keeps all of that on the test thread.
+            .setQueryExecutor { it.run() }
+            .setTransactionExecutor { it.run() }
+            .build()
 
         db.userProfileDao().upsert(
             UserProfileEntity(
@@ -90,11 +121,18 @@ class EditMealViewModelTest {
             currentUser = fakeCurrentUser,
             zone = zone,
             clock = fixedClock,
+            ioDispatcher = testDispatcher,
         )
     }
 
     @After
     fun teardown() {
+        // Order matters. Cancel the ViewModel scopes first, then let the dispatcher drain so
+        // those cancellations actually unwind, and only then close the database. Closing it
+        // while a collector is still mid-query throws from a coroutine nobody is awaiting, which
+        // resurfaces as an unrelated test failing with UncaughtExceptionsBeforeTest.
+        viewModelStore.clear()
+        testDispatcher.scheduler.advanceUntilIdle()
         db.close()
         Dispatchers.resetMain()
     }
@@ -111,7 +149,7 @@ class EditMealViewModelTest {
     fun `scaleMeal doubles every entry in place`() = runTest {
         val mealId = seedMeal()
         val originalIds = repo.mealEntries(mealId).map { it.id }.sorted()
-        val vm = EditMealViewModel(repo, mealId)
+        val vm = viewModel(mealId)
 
         vm.scaleMeal(2.0)
 
@@ -136,7 +174,7 @@ class EditMealViewModelTest {
         val entries = repo.mealEntries(mealId)
         val target = entries.first { it.name == "Apple" }
         val other = entries.first { it.name == "Banana" }
-        val vm = EditMealViewModel(repo, mealId)
+        val vm = viewModel(mealId)
 
         vm.scaleItem(target.id, 2.0)
 
@@ -151,7 +189,7 @@ class EditMealViewModelTest {
     fun `logToDate creates a new scaled meal group on the target day, leaving original unchanged`() = runTest {
         val mealId = seedMeal()
         val originalEntries = repo.mealEntries(mealId)
-        val vm = EditMealViewModel(repo, mealId)
+        val vm = viewModel(mealId)
 
         vm.logToDate(pastDate, 1.5)
 

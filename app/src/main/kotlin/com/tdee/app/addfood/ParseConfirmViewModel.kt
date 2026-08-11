@@ -130,7 +130,7 @@ class ParseConfirmViewModel(
 
     fun setText(v: String) {
         _mealSaved.value = false
-        _state.update { it.copy(text = v) }
+        _state.update { it.copy(text = v, mealSaveError = null) }
     }
 
     fun setSelectedDate(date: LocalDate) {
@@ -141,7 +141,7 @@ class ParseConfirmViewModel(
         val text = _state.value.text
         if (text.isBlank()) return
         viewModelScope.launch {
-            _state.update { it.copy(parsing = true, parseError = null) }
+            _state.update { it.copy(parsing = true, parseError = null, mealSaveError = null) }
             when (val result = parser.parse(text)) {
                 is ParseResult.Success -> _state.update {
                     it.copy(
@@ -170,7 +170,10 @@ class ParseConfirmViewModel(
         _mealSaved.value = false
         _state.update { s ->
             if (index !in s.items.indices) return@update s
-            s.copy(items = s.items.toMutableList().also { it[index] = transform(it[index]) })
+            s.copy(
+                items = s.items.toMutableList().also { it[index] = transform(it[index]) },
+                mealSaveError = null,
+            )
         }
     }
 
@@ -182,11 +185,14 @@ class ParseConfirmViewModel(
     fun setGrams(index: Int, v: String) = updateItem(index) { it.copy(grams = v) }
     fun setFactor(index: Int, v: String) = updateItem(index) { it.copy(factor = v) }
 
-    fun addItem() = _state.update { it.copy(items = it.items + EditableFoodItem()) }
+    fun addItem() = _state.update { it.copy(items = it.items + EditableFoodItem(), mealSaveError = null) }
 
     fun removeItem(index: Int) = _state.update { s ->
         if (index !in s.items.indices) return@update s
-        s.copy(items = s.items.toMutableList().also { it.removeAt(index) })
+        s.copy(
+            items = s.items.toMutableList().also { it.removeAt(index) },
+            mealSaveError = null,
+        )
     }
 
     // -----------------------------------------------------------------------
