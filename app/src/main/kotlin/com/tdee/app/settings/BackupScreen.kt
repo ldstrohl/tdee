@@ -265,8 +265,8 @@ private fun RestoreConfirmDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    "Replace ${totalEntries(local)} local entries with ${totalEntries(backup)} " +
-                        "entries from $sourceLabel?",
+                    "Replace ${entryCount(totalEntries(local))} on this device with " +
+                        "${entryCount(totalEntries(backup))} from $sourceLabel?",
                 )
                 Text(
                     "This device                Backup\n" +
@@ -294,6 +294,9 @@ private fun RestoreConfirmDialog(
 }
 
 private fun totalEntries(c: BackupCounts): Int = c.foods + c.weights + c.savedMeals + c.targets
+
+/** "1 entry" / "12 entries" — this string sits in the dialog that precedes irreversible loss. */
+private fun entryCount(n: Int): String = if (n == 1) "1 entry" else "$n entries"
 
 private fun yesNo(b: Boolean) = if (b) "yes" else "no"
 
