@@ -148,18 +148,24 @@ fun ParseConfirmScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("Describe a meal", style = MaterialTheme.typography.headlineSmall)
+            Text(
+                if (state.appendMode) "Add to meal" else "Describe a meal",
+                style = MaterialTheme.typography.headlineSmall,
+            )
             TextButton(onClick = onDone) { Text("Back") }
         }
 
-        // Date selector — defaults to today; tap to log to a prior day.
-        val dateLabel = if (selectedDate == today) "Today" else
-            selectedDate.format(DateTimeFormatter.ofPattern("MMM d, yyyy"))
-        OutlinedButton(
-            onClick = { showDatePicker = true },
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text("Logging for: $dateLabel")
+        // Date selector — defaults to today; tap to log to a prior day. Hidden in append mode:
+        // appended items always land on the target meal's existing log-day.
+        if (!state.appendMode) {
+            val dateLabel = if (selectedDate == today) "Today" else
+                selectedDate.format(DateTimeFormatter.ofPattern("MMM d, yyyy"))
+            OutlinedButton(
+                onClick = { showDatePicker = true },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Logging for: $dateLabel")
+            }
         }
 
         OutlinedTextField(
@@ -240,20 +246,22 @@ fun ParseConfirmScreen(
             Text("Add item")
         }
 
-        OutlinedTextField(
-            value = mealNameInput,
-            onValueChange = { mealNameInput = it; mealNameInputEdited = true },
-            label = { Text("Meal name") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-        )
-
-        if (mealSaved) {
-            Text(
-                "Meal saved to library.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.primary,
+        if (!state.appendMode) {
+            OutlinedTextField(
+                value = mealNameInput,
+                onValueChange = { mealNameInput = it; mealNameInputEdited = true },
+                label = { Text("Meal name") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
             )
+
+            if (mealSaved) {
+                Text(
+                    "Meal saved to library.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
         }
 
         state.mealSaveError?.let { error ->
@@ -264,31 +272,43 @@ fun ParseConfirmScreen(
             )
         }
 
-        OutlinedButton(
-            onClick = { showSaveAsMealDialog = true },
-            enabled = state.canSave,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text("Save meal & add")
+        if (!state.appendMode) {
+            OutlinedButton(
+                onClick = { showSaveAsMealDialog = true },
+                enabled = state.canSave,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Save meal & add")
+            }
         }
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            OutlinedButton(
-                onClick = viewModel::saveAllIndividually,
-                enabled = state.canSave,
-                modifier = Modifier.weight(1f),
-            ) {
-                Text("Add items")
-            }
+        if (state.appendMode) {
             Button(
-                onClick = { viewModel.saveAll(mealNameInput) },
+                onClick = { viewModel.saveAll() },
                 enabled = state.canSave,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("Add as meal")
+                Text("Add to meal")
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedButton(
+                    onClick = viewModel::saveAllIndividually,
+                    enabled = state.canSave,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Add items")
+                }
+                Button(
+                    onClick = { viewModel.saveAll(mealNameInput) },
+                    enabled = state.canSave,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Add as meal")
+                }
             }
         }
     }

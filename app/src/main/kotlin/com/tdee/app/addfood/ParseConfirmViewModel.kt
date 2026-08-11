@@ -65,6 +65,8 @@ data class ParseConfirmState(
     val mealName: String? = null,
     /** Non-null when the last saveAsMeal/saveMealAndAdd call was rejected (blank name/no items). */
     val mealSaveError: String? = null,
+    /** True when this screen is appending items to an already-logged meal (see [ParseConfirmViewModel.factory]). */
+    val appendMode: Boolean = false,
 ) {
     /** Save All is enabled when at least one item is valid. Invalid items are skipped on save. */
     val canSave: Boolean get() = items.any { it.isValid }
@@ -108,9 +110,10 @@ data class ParseConfirmState(
 class ParseConfirmViewModel(
     private val parser: FoodParser,
     private val repo: TdeeRepository,
+    private val targetMealId: String? = null,
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow(ParseConfirmState())
+    private val _state = MutableStateFlow(ParseConfirmState(appendMode = targetMealId != null))
     val state: StateFlow<ParseConfirmState> = _state.asStateFlow()
 
     private val _saved = MutableStateFlow(false)
@@ -204,9 +207,20 @@ class ParseConfirmViewModel(
         if (valid.isEmpty()) return
         viewModelScope.launch {
             val foodItems = validItems()
-            val date = selectedDate.value.takeUnless { it == LocalDate.now() }
-            repo.addFoodGroup(foodItems, date, mealName?.trim()?.takeIf { it.isNotBlank() })
-            _saved.value = true
+            if (targetMealId != null) {
+                val added = repo.addItemsToMeal(targetMealId, foodItems)
+                if (added) {
+                    _saved.value = true
+                } else {
+                    // Meal vanished underneath us (e.g. soft-deleted elsewhere). Surface the error
+                    // and stay put — `saved` must never flip, or the screen navigates away.
+                    _state.update { it.copy(mealSaveError = "That meal no longer exists. Nothing was added.") }
+                }
+            } else {
+                val date = selectedDate.value.takeUnless { it == LocalDate.now() }
+                repo.addFoodGroup(foodItems, date, mealName?.trim()?.takeIf { it.isNotBlank() })
+                _saved.value = true
+            }
         }
     }
 
@@ -295,6 +309,15 @@ class ParseConfirmViewModel(
                 ParseConfirmViewModel(app.container.foodParser, app.container.repository).also {
                     it.selectedDate.value = initialDate
                 }
+            }
+        }
+
+        /** Factory for appending parsed items to the already-logged meal [targetMealId]. */
+        fun factory(targetMealId: String): ViewModelProvider.Factory = viewModelFactory {
+            initializer {
+                val app =
+                    this[ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY] as TdeeApplication
+                ParseConfirmViewModel(app.container.foodParser, app.container.repository, targetMealId)
             }
         }
     }
