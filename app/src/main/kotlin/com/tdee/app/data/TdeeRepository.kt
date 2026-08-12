@@ -562,6 +562,44 @@ class TdeeRepository(
     }
 
     /**
+     * Appends [items] to an already-logged meal: same [mealId], same `mealName`, and the same
+     * `timestamp` as the meal's existing entries (so appended items land on the meal's original
+     * log-day, not today). If [mealId] has no existing entries for this user, or [items] is empty,
+     * this is a no-op. Returns true if items were actually inserted, false on the no-op paths.
+     */
+    suspend fun addItemsToMeal(mealId: String, items: List<NewFoodItem>): Boolean = withContext(ioDispatcher) {
+        if (items.isEmpty()) return@withContext false
+        val uid = currentUser.userId()
+        val existing = foodDao.getByMeal(uid, mealId)
+        val first = existing.firstOrNull() ?: return@withContext false
+        val now = clock.instant()
+        foodDao.insertAll(
+            items.map { item ->
+                FoodEntryEntity(
+                    userId = uid,
+                    timestamp = first.timestamp,
+                    rawText = item.name,
+                    name = item.name,
+                    quantity = 1.0,
+                    unit = "serving",
+                    grams = item.grams ?: 0.0,
+                    kcal = item.kcal,
+                    proteinG = item.proteinG,
+                    fatG = item.fatG,
+                    carbG = item.carbG,
+                    sourceDb = FoodSourceDb.MANUAL,
+                    mealId = mealId,
+                    mealName = first.mealName,
+                    scaleFactor = item.factor,
+                    createdAt = now,
+                    updatedAt = now,
+                )
+            }
+        )
+        true
+    }
+
+    /**
      * Inserts [items] as standalone entries (no meal grouping — `mealId`/`mealName` are null on
      * every row). Shares the same timestamp logic as [addFoodGroup] (all items get one shared
      * timestamp; [loggedDate] backdates to noon of that log-day when non-null).
@@ -619,8 +657,7 @@ class TdeeRepository(
      * this is a no-op. Preserves [FoodEntryEntity.rawText], [FoodEntryEntity.userId],
      * [FoodEntryEntity.timestamp], [FoodEntryEntity.createdAt], [FoodEntryEntity.mealId],
      * and [FoodEntryEntity.deletedAt]; bumps [FoodEntryEntity.updatedAt] to [clock]'s instant.
-     * Resets [FoodEntryEntity.scaleFactor] to 1.0 — a manual macro edit makes the edited values
-     * the new native serving.
+     * Persists [scaleFactor] (defaults to 1.0, matching prior behavior when not specified).
      */
     suspend fun updateFood(
         id: Long,
@@ -630,6 +667,7 @@ class TdeeRepository(
         fatG: Double,
         carbG: Double,
         grams: Double?,
+        scaleFactor: Double = 1.0,
     ) = withContext(ioDispatcher) {
         val existing = foodDao.getById(id) ?: return@withContext
         foodDao.update(
@@ -640,7 +678,7 @@ class TdeeRepository(
                 fatG = fatG,
                 carbG = carbG,
                 grams = grams ?: existing.grams,
-                scaleFactor = 1.0,
+                scaleFactor = scaleFactor,
                 updatedAt = clock.instant(),
             )
         )

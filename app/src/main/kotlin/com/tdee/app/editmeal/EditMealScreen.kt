@@ -42,6 +42,7 @@ fun EditMealScreen(
     viewModel: EditMealViewModel,
     onBack: () -> Unit,
     onEditFood: (Long) -> Unit,
+    onAddItems: () -> Unit,
 ) {
     val entries by viewModel.entries.collectAsState()
     val loggedToDate by viewModel.loggedToDate.collectAsState()
@@ -136,6 +137,7 @@ fun EditMealScreen(
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TextButton(onClick = { scalingMeal = true }) { Text("Scale meal") }
             TextButton(onClick = { showLogDatePicker = true }) { Text("Log to another day") }
+            TextButton(onClick = onAddItems) { Text("Add items") }
         }
         loggedToDate?.let {
             Text(

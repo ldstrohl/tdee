@@ -65,7 +65,14 @@ class ParseConfirmViewModelTest {
         db = Room.inMemoryDatabaseBuilder(
             RuntimeEnvironment.getApplication(),
             AppDatabase::class.java,
-        ).allowMainThreadQueries().build()
+        ).allowMainThreadQueries()
+            // Room runs queries and invalidation-tracker callbacks on its own executors, so a
+            // Flow emission can dispatch to Main on a thread the test scheduler cannot drain —
+            // after the test ended, colliding with the next test's Dispatchers.setMain. Running
+            // both executors inline keeps all of that on the test thread.
+            .setQueryExecutor { it.run() }
+            .setTransactionExecutor { it.run() }
+            .build()
 
         val now = fixedNow
         db.userProfileDao().upsert(
@@ -106,6 +113,7 @@ class ParseConfirmViewModelTest {
             currentUser = fakeCurrentUser,
             zone = zone,
             clock = fixedClock,
+            ioDispatcher = testDispatcher,
         )
 
         vm = ParseConfirmViewModel(LocalHeuristicFoodParser(), repo)
@@ -113,6 +121,10 @@ class ParseConfirmViewModelTest {
 
     @After
     fun teardown() {
+        // Let the ViewModel coroutines this test started finish before the dispatcher goes away —
+        // one still live at the next `Dispatchers.setMain` fails an unrelated test with
+        // "Dispatchers.Main is used concurrently with setting it" (see DashboardViewModelTest).
+        testDispatcher.scheduler.advanceUntilIdle()
         db.close()
         Dispatchers.resetMain()
     }
@@ -357,6 +369,70 @@ class ParseConfirmViewModelTest {
         val mealIds = entries.map { it.mealId }.distinct()
         assertEquals(1, mealIds.size)
         assertNotNull(mealIds[0])
+    }
+
+    // -----------------------------------------------------------------------
+    // Append mode: targetMealId routes saveAll through addItemsToMeal
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `in append mode saveAll adds items to the existing meal instead of creating a new one`() = runTest {
+        // Log an initial meal via a non-append VM.
+        vm.setText("burger")
+        vm.parse()
+        vm.setKcal(0, "500")
+        vm.saveAll()
+        vm.saved.filter { it }.first()
+        val existingMealId = repo.todayFoodEntries().first().mealId!!
+
+        val appendVm = ParseConfirmViewModel(LocalHeuristicFoodParser(), repo, existingMealId)
+        assertTrue(appendVm.state.value.appendMode)
+
+        appendVm.setText("fries")
+        appendVm.parse()
+        appendVm.setKcal(0, "300")
+
+        appendVm.saveAll()
+        appendVm.saved.filter { it }.first()
+
+        val entries = repo.todayFoodEntries()
+        assertEquals(2, entries.size)
+        val mealIds = entries.map { it.mealId }.distinct()
+        assertEquals("No new mealId should be created; items join the existing meal", listOf(existingMealId), mealIds)
+    }
+
+    @Test
+    fun `non-append mode leaves appendMode false`() = runTest {
+        assertFalse(vm.state.value.appendMode)
+    }
+
+    @Test
+    fun `saveAll in append mode does not report success when the target meal has no active entries`() = runTest {
+        // Meal exists but every entry in it was soft-deleted (e.g. the user deleted them, or the
+        // whole meal, from elsewhere while this append screen was still open with a stale mealId).
+        vm.setText("burger")
+        vm.parse()
+        vm.setKcal(0, "500")
+        vm.saveAll()
+        vm.saved.filter { it }.first()
+        val existingMealId = repo.todayFoodEntries().first().mealId!!
+        repo.softDeleteMeal(existingMealId)
+
+        val appendVm = ParseConfirmViewModel(LocalHeuristicFoodParser(), repo, existingMealId)
+        appendVm.setText("fries")
+        appendVm.parse()
+        appendVm.setKcal(0, "300")
+
+        appendVm.saveAll()
+        // Wait for the save coroutine to finish: the failure path surfaces an error banner.
+        appendVm.state.filter { it.mealSaveError != null }.first()
+
+        // addItemsToMeal is documented as a no-op when the meal has no active entries: nothing
+        // was persisted...
+        assertEquals(0, repo.mealEntries(existingMealId).size)
+        // ...so the screen must not tell the user the save succeeded — `saved` staying false is
+        // what keeps ParseConfirmScreen from navigating away.
+        assertFalse(appendVm.saved.value)
     }
 
     // -----------------------------------------------------------------------

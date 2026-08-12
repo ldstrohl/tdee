@@ -166,13 +166,14 @@ fun EditFoodEntryScreen(
                 singleLine = true,
                 modifier = Modifier.weight(1f),
             )
-        }
-
-        if (kotlin.math.abs(state.scaleFactor - 1.0) > 1e-9) {
-            Text(
-                "Scaled ×${formatFactor(state.scaleFactor)} from original serving",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            OutlinedTextField(
+                value = state.scale,
+                onValueChange = viewModel::setScale,
+                label = { Text("Scale ×") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                singleLine = true,
+                isError = !state.scaleValid,
+                modifier = Modifier.weight(1f),
             )
         }
 

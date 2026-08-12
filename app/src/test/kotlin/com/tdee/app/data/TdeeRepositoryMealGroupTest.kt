@@ -158,6 +158,65 @@ class TdeeRepositoryMealGroupTest {
     }
 
     // -----------------------------------------------------------------------
+    // addItemsToMeal
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `addItemsToMeal appends items with the same mealId, mealName, and timestamp`() = runTest {
+        val mealId = repo.addFoodGroup(
+            listOf(NewFoodItem("Burger", 500.0, 25.0, 20.0, 40.0, null)),
+            mealName = "Lunch",
+        )
+        val original = db.foodEntryDao().getActive(userId).first()
+
+        repo.addItemsToMeal(
+            mealId,
+            listOf(NewFoodItem("Fries", 300.0, 4.0, 15.0, 40.0, null, factor = 1.5)),
+        )
+
+        val entries = db.foodEntryDao().getByMeal(userId, mealId)
+        assertEquals(2, entries.size)
+        val fries = entries.first { it.name == "Fries" }
+        assertEquals(mealId, fries.mealId)
+        assertEquals("Lunch", fries.mealName)
+        assertEquals(original.timestamp, fries.timestamp)
+        assertEquals(1.5, fries.scaleFactor, 0.001)
+    }
+
+    @Test
+    fun `addItemsToMeal lands on the meal's original log-day even when it was logged in the past`() = runTest {
+        val pastDate = fixedNow.atZone(zone).toLocalDate().minusDays(5)
+        val mealId = repo.addFoodGroup(
+            listOf(NewFoodItem("Oats", 300.0, 10.0, 5.0, 55.0, null)),
+            loggedDate = pastDate,
+        )
+        val original = db.foodEntryDao().getActive(userId).first()
+
+        repo.addItemsToMeal(mealId, listOf(NewFoodItem("Berries", 50.0, 1.0, 0.0, 12.0, null)))
+
+        val entries = db.foodEntryDao().getByMeal(userId, mealId)
+        val berries = entries.first { it.name == "Berries" }
+        assertEquals(original.timestamp, berries.timestamp)
+        assertEquals(pastDate, berries.timestamp.atZone(zone).toLocalDate())
+    }
+
+    @Test
+    fun `addItemsToMeal on an unknown mealId is a no-op`() = runTest {
+        repo.addItemsToMeal("unknown-meal", listOf(NewFoodItem("A", 100.0, 0.0, 0.0, 0.0, null)))
+
+        assertTrue(db.foodEntryDao().getActive(userId).isEmpty())
+    }
+
+    @Test
+    fun `addItemsToMeal with empty list is a no-op`() = runTest {
+        val mealId = repo.addFoodGroup(listOf(NewFoodItem("Burger", 500.0, 25.0, 20.0, 40.0, null)))
+
+        repo.addItemsToMeal(mealId, emptyList())
+
+        assertEquals(1, db.foodEntryDao().getByMeal(userId, mealId).size)
+    }
+
+    // -----------------------------------------------------------------------
     // addFoodItems
     // -----------------------------------------------------------------------
 
@@ -266,6 +325,18 @@ class TdeeRepositoryMealGroupTest {
 
         val updated = db.foodEntryDao().getById(original.id)!!
         assertEquals(1.0, updated.scaleFactor, 0.001)
+    }
+
+    @Test
+    fun `updateFood persists a passed scaleFactor`() = runTest {
+        repo.addFoodGroup(listOf(NewFoodItem("Rice", 200.0, 4.0, 1.0, 44.0, null, factor = 2.0)))
+        val original = db.foodEntryDao().getActive(userId).first()
+        assertEquals(2.0, original.scaleFactor, 0.001)
+
+        repo.updateFood(original.id, "Updated Rice", 150.0, 3.0, 0.75, 33.0, null, scaleFactor = 1.5)
+
+        val updated = db.foodEntryDao().getById(original.id)!!
+        assertEquals(1.5, updated.scaleFactor, 0.001)
     }
 
     @Test

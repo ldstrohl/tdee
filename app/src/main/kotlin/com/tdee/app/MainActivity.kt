@@ -293,6 +293,22 @@ class MainActivity : ComponentActivity() {
                                         viewModel = viewModel(factory = EditMealViewModel.factory(mealId)),
                                         onBack = { navController.popBackStack() },
                                         onEditFood = { id -> navController.navigate("edit_food/$id") },
+                                        onAddItems = { navController.navigate("log_text_append/$mealId") },
+                                    )
+                                }
+
+                                composable(
+                                    route = "log_text_append/{mealId}",
+                                    arguments = listOf(
+                                        navArgument("mealId") { type = NavType.StringType }
+                                    ),
+                                ) { backStackEntry ->
+                                    val mealId = backStackEntry.arguments!!.getString("mealId")!!
+                                    val vm: ParseConfirmViewModel =
+                                        viewModel(factory = ParseConfirmViewModel.factory(mealId))
+                                    ParseConfirmScreen(
+                                        viewModel = vm,
+                                        onDone = { navController.popBackStack() },
                                     )
                                 }
 
