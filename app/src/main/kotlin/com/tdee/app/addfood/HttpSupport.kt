@@ -19,7 +19,13 @@ internal val JSON_MEDIA = "application/json".toMediaType()
 
 internal sealed interface HttpOutcome {
     data class Body(val text: String) : HttpOutcome
-    data class Error(val failure: ParseResult.Failure) : HttpOutcome
+
+    /**
+     * A terminal failure. [code] is the HTTP status when the server answered, or null when the
+     * call never completed (network error) — callers that must tell one status apart from another
+     * (e.g. a 404 meaning "no such product") need it, because [failure] carries only a coarse kind.
+     */
+    data class Error(val failure: ParseResult.Failure, val code: Int? = null) : HttpOutcome
 }
 
 /**
@@ -43,7 +49,7 @@ internal suspend fun executeWithRetry(client: OkHttpClient, request: Request): H
                         // fall through to backoff + retry
                     } else {
                         val errBody = response.body?.string().orEmpty()
-                        return@withContext HttpOutcome.Error(mapHttpError(code, errBody))
+                        return@withContext HttpOutcome.Error(mapHttpError(code, errBody), code)
                     }
                 }
             } catch (_: IOException) {
