@@ -95,6 +95,9 @@ dependencies {
     // Google Drive backup: OAuth authorization (AuthorizationClient, not sign-in identity)
     implementation(libs.play.services.auth)
 
+    // Barcode scanning (ML Kit code scanner UI, runs in Play Services — no CAMERA permission needed)
+    implementation(libs.play.services.code.scanner)
+
     // Debug
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)

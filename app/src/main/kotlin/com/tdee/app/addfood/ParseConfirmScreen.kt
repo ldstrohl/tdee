@@ -33,8 +33,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
+import com.tdee.app.data.Macro
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -45,6 +50,7 @@ import java.time.format.DateTimeFormatter
 fun ParseConfirmScreen(
     viewModel: ParseConfirmViewModel,
     onDone: () -> Unit,
+    autoScan: Boolean = false,
 ) {
     val state by viewModel.state.collectAsState()
     val saved by viewModel.saved.collectAsState()
@@ -53,6 +59,28 @@ fun ParseConfirmScreen(
 
     LaunchedEffect(saved) {
         if (saved) onDone()
+    }
+
+    val context = LocalContext.current
+    var barcodeInput by remember { mutableStateOf("") }
+
+    fun launchScanner() {
+        val options = GmsBarcodeScannerOptions.Builder()
+            .setBarcodeFormats(
+                Barcode.FORMAT_EAN_13,
+                Barcode.FORMAT_EAN_8,
+                Barcode.FORMAT_UPC_A,
+                Barcode.FORMAT_UPC_E,
+            )
+            .build()
+        GmsBarcodeScanning.getClient(context, options).startScan()
+            .addOnSuccessListener { barcode -> barcode.rawValue?.let(viewModel::lookupBarcode) }
+            .addOnCanceledListener { /* user backed out — no message */ }
+            .addOnFailureListener { viewModel.scannerFailed() }
+    }
+
+    LaunchedEffect(Unit) {
+        if (autoScan && viewModel.scanningAvailable) launchScanner()
     }
 
     val today = remember { LocalDate.now() }
@@ -165,6 +193,32 @@ fun ParseConfirmScreen(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text("Logging for: $dateLabel")
+            }
+        }
+
+        if (viewModel.scanningAvailable) {
+            Button(
+                onClick = { launchScanner() },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Scan barcode")
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedTextField(
+                    value = barcodeInput,
+                    onValueChange = { barcodeInput = it },
+                    label = { Text("Enter barcode") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                )
+                Button(onClick = { viewModel.lookupBarcode(barcodeInput) }) {
+                    Text("Look up")
+                }
             }
         }
 
@@ -314,6 +368,19 @@ fun ParseConfirmScreen(
     }
 }
 
+/** Short, understated note for macros the row estimated rather than read off a label. */
+private fun estimatedMacroCaption(estimated: Set<Macro>): String? {
+    if (estimated.isEmpty()) return null
+    val names = estimated.sortedBy { it.ordinal }.joinToString(", ") { macro ->
+        when (macro) {
+            Macro.PROTEIN -> "Protein"
+            Macro.FAT -> "Fat"
+            Macro.CARB -> "Carbs"
+        }
+    }
+    return "$names estimated — not on the label"
+}
+
 @Composable
 private fun ItemCard(
     item: EditableFoodItem,
@@ -349,6 +416,14 @@ private fun ItemCard(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
+
+            estimatedMacroCaption(item.estimatedMacros)?.let { caption ->
+                Text(
+                    caption,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
 
             OutlinedTextField(
                 value = item.kcal,

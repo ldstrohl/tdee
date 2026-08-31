@@ -46,6 +46,7 @@ fun DashboardScreen(
     viewModel: DashboardViewModel,
     onAddFood: (LocalDate) -> Unit = {},
     onLogText: (LocalDate) -> Unit = {},
+    onScan: (LocalDate) -> Unit = {},
     onAddWeight: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onOpenInsights: () -> Unit = {},
@@ -184,6 +185,7 @@ fun DashboardScreen(
             foods = dayFoods,
             onAddFood = { onAddFood(selectedDate) },
             onLogText = { onLogText(selectedDate) },
+            onScan = { onScan(selectedDate) },
             onDelete = { viewModel.deleteFood(it) },
             onDeleteMeal = { viewModel.deleteMeal(it) },
             onEditFood = onEditFood,
@@ -377,6 +379,7 @@ private fun TodayFoodSection(
     foods: List<FoodEntryEntity>,
     onAddFood: () -> Unit,
     onLogText: () -> Unit,
+    onScan: () -> Unit,
     onDelete: (Long) -> Unit,
     onDeleteMeal: (String) -> Unit,
     onEditFood: (Long) -> Unit,
@@ -419,6 +422,7 @@ private fun TodayFoodSection(
                 Text("Food", style = MaterialTheme.typography.titleMedium)
                 Row {
                     TextButton(onClick = onLogText) { Text("Describe a meal") }
+                    TextButton(onClick = onScan) { Text("Scan") }
                     TextButton(onClick = onAddFood) { Text("+ Add") }
                 }
             }
