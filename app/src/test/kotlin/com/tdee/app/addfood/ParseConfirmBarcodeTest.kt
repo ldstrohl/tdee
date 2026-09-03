@@ -286,6 +286,29 @@ class ParseConfirmBarcodeTest {
     }
 
     @Test
+    fun `a trailing dash is stripped before lookup`() = runTest {
+        server.enqueue(MockResponse().setBody(pringlesJson).setResponseCode(200))
+
+        vm.lookupBarcode("0038000138416-")
+        awaitLookup()
+
+        val recorded = server.takeRequest()
+        assertTrue(
+            "expected the stripped digits in the request path, got ${recorded.path}",
+            recorded.path?.contains("0038000138416.json") == true,
+        )
+        assertEquals(1, vm.state.value.items.size)
+    }
+
+    @Test
+    fun `a barcode with no digits does not call the service`() = runTest {
+        vm.lookupBarcode("---")
+
+        assertEquals(0, server.requestCount)
+        assertTrue(vm.state.value.items.isEmpty())
+    }
+
+    @Test
     fun `a lookup with a gap marks that macro as estimated on the row`() = runTest {
         server.enqueue(MockResponse().setBody(missingFatJson).setResponseCode(200))
 

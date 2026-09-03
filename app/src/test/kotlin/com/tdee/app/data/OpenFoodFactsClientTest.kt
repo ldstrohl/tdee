@@ -300,6 +300,19 @@ class OpenFoodFactsClientTest {
     }
 
     @Test
+    fun `a network failure names Open Food Facts, not meal parsing`() {
+        server.enqueue(MockResponse().setSocketPolicy(okhttp3.mockwebserver.SocketPolicy.DISCONNECT_AT_START))
+        server.enqueue(MockResponse().setSocketPolicy(okhttp3.mockwebserver.SocketPolicy.DISCONNECT_AT_START))
+        server.enqueue(MockResponse().setSocketPolicy(okhttp3.mockwebserver.SocketPolicy.DISCONNECT_AT_START))
+        val result = runBlocking { offClient().lookup("0038000138416") }
+
+        assertTrue("expected Failure, got $result", result is ProductLookup.Failure)
+        val failure = result as ProductLookup.Failure
+        assertEquals(ParseErrorKind.NETWORK, failure.kind)
+        assertEquals("Couldn't reach Open Food Facts — try again.", failure.message)
+    }
+
+    @Test
     fun `sends a User-Agent header with no email address`() {
         server.enqueue(MockResponse().setBody(pringlesJson).setResponseCode(200))
         runBlocking { offClient().lookup("0038000138416") }

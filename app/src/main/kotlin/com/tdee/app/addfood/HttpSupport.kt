@@ -1,6 +1,8 @@
 package com.tdee.app.addfood
 
+import java.io.InterruptedIOException
 import java.io.IOException
+import java.net.UnknownHostException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -31,8 +33,15 @@ internal sealed interface HttpOutcome {
 /**
  * Sends [request], retrying up to [MAX_ATTEMPTS] times on transient 429/500/503 and network errors
  * with backoff `400*(attempt+1)`ms. Maps terminal failures to a typed [ParseErrorKind].
+ *
+ * @param serviceLabel names what was being reached, for the network-failure message (e.g. "the
+ * meal parser", "Open Food Facts").
  */
-internal suspend fun executeWithRetry(client: OkHttpClient, request: Request): HttpOutcome =
+internal suspend fun executeWithRetry(
+    client: OkHttpClient,
+    request: Request,
+    serviceLabel: String,
+): HttpOutcome =
     withContext(Dispatchers.IO) {
         var lastError: HttpOutcome.Error = HttpOutcome.Error(
             ParseResult.Failure(ParseErrorKind.UNKNOWN, "Couldn't parse the meal — try again."),
@@ -52,20 +61,27 @@ internal suspend fun executeWithRetry(client: OkHttpClient, request: Request): H
                         return@withContext HttpOutcome.Error(mapHttpError(code, errBody), code)
                     }
                 }
-            } catch (_: IOException) {
+            } catch (e: IOException) {
                 if (attempt >= MAX_ATTEMPTS - 1) {
                     return@withContext HttpOutcome.Error(
-                        ParseResult.Failure(ParseErrorKind.NETWORK, "No internet connection."),
+                        ParseResult.Failure(ParseErrorKind.NETWORK, networkErrorMessage(e, serviceLabel)),
                     )
                 }
                 lastError = HttpOutcome.Error(
-                    ParseResult.Failure(ParseErrorKind.NETWORK, "No internet connection."),
+                    ParseResult.Failure(ParseErrorKind.NETWORK, networkErrorMessage(e, serviceLabel)),
                 )
             }
             delay(400L * (attempt + 1))
         }
         lastError
     }
+
+/** Honest, non-technical wording for [e], distinguishing "offline" from "reachable but failed". */
+internal fun networkErrorMessage(e: IOException, serviceLabel: String): String = when (e) {
+    is UnknownHostException -> "No internet connection."
+    is InterruptedIOException -> "Couldn't reach $serviceLabel in time — try again."
+    else -> "Couldn't reach $serviceLabel — try again."
+}
 
 internal fun mapHttpError(code: Int, body: String): ParseResult.Failure = when {
     code == 401 || code == 403 ->

@@ -90,7 +90,7 @@ internal class GeminiAdapter(
             .post(body.toRequestBody(JSON_MEDIA))
             .build()
 
-        return when (val outcome = executeWithRetry(client, request)) {
+        return when (val outcome = executeWithRetry(client, request, "the meal parser")) {
             is HttpOutcome.Error -> outcome.failure
             is HttpOutcome.Body -> extractInner(outcome.text) { json ->
                 json.getJSONArray("candidates").getJSONObject(0)
@@ -125,7 +125,7 @@ internal class OpenAiAdapter(
             .post(body.toRequestBody(JSON_MEDIA))
             .build()
 
-        return when (val outcome = executeWithRetry(client, request)) {
+        return when (val outcome = executeWithRetry(client, request, "the meal parser")) {
             is HttpOutcome.Error -> outcome.failure
             is HttpOutcome.Body -> extractInner(outcome.text) { json ->
                 json.getJSONArray("choices").getJSONObject(0)
@@ -159,7 +159,7 @@ internal class AnthropicAdapter(
             .post(body.toRequestBody(JSON_MEDIA))
             .build()
 
-        return when (val outcome = executeWithRetry(client, request)) {
+        return when (val outcome = executeWithRetry(client, request, "the meal parser")) {
             is HttpOutcome.Error -> outcome.failure
             is HttpOutcome.Body -> extractInner(outcome.text) { json ->
                 json.getJSONArray("content").getJSONObject(0).getString("text")

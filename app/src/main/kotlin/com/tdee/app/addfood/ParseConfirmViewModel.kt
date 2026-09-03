@@ -195,12 +195,14 @@ class ParseConfirmViewModel(
      * state and [ParseConfirmState.parseError] for not-found/failure messages.
      */
     fun lookupBarcode(barcode: String) {
-        val trimmed = barcode.trim()
+        // Strip non-digits: KeyboardType.Number still permits "-" and ".", and a stray character
+        // silently turns a valid barcode into a not-found. Covers the scanner path too.
+        val digits = barcode.filter { it.isDigit() }
         val lookup = productLookup
-        if (trimmed.isBlank() || lookup == null) return
+        if (digits.isEmpty() || lookup == null) return
         viewModelScope.launch {
             _state.update { it.copy(parsing = true, parseError = null) }
-            when (val result = lookup.lookup(trimmed)) {
+            when (val result = lookup.lookup(digits)) {
                 is ProductLookup.Found -> _state.update {
                     it.copy(
                         parsing = false,
@@ -211,7 +213,7 @@ class ParseConfirmViewModel(
                 is ProductLookup.NotFound -> _state.update {
                     it.copy(
                         parsing = false,
-                        parseError = "No product found for $trimmed. Add it by hand or describe it above.",
+                        parseError = "No product found for $digits. Add it by hand or describe it above.",
                     )
                 }
                 is ProductLookup.Failure -> _state.update {

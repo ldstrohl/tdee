@@ -210,7 +210,7 @@ fun ParseConfirmScreen(
             ) {
                 OutlinedTextField(
                     value = barcodeInput,
-                    onValueChange = { barcodeInput = it },
+                    onValueChange = { barcodeInput = it.filter(Char::isDigit) },
                     label = { Text("Enter barcode") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,

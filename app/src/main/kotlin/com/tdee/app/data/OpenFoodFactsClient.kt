@@ -49,7 +49,7 @@ class OpenFoodFactsClient(
             .header("User-Agent", "TDEE-App/1.0 (github.com/ldstrohl/tdee)")
             .build()
 
-        return when (val outcome = executeWithRetry(client, request)) {
+        return when (val outcome = executeWithRetry(client, request, "Open Food Facts")) {
             is HttpOutcome.Body -> parseProduct(outcome.text, barcode)
             // A 404 means OFF has no such barcode. Every other error is a real failure and must
             // stay one — reporting an outage as "not in the database" would send the user off to
