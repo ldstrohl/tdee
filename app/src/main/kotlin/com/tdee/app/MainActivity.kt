@@ -107,6 +107,7 @@ class MainActivity : ComponentActivity() {
                                         viewModel = vm,
                                         onAddFood = { date -> navController.navigate("add_food?date=$date") },
                                         onLogText = { date -> navController.navigate("log_text?date=$date") },
+                                        onScan = { date -> navController.navigate("log_text?date=$date&scan=true") },
                                         onAddWeight = { navController.navigate("weight") },
                                         onOpenSettings = { navController.navigate("settings") },
                                         onOpenInsights = { navController.navigate("insights") },
@@ -218,22 +219,28 @@ class MainActivity : ComponentActivity() {
                                 }
 
                                 composable(
-                                    route = "log_text?date={date}",
+                                    route = "log_text?date={date}&scan={scan}",
                                     arguments = listOf(
                                         navArgument("date") {
                                             type = NavType.StringType
                                             nullable = true
                                             defaultValue = null
-                                        }
+                                        },
+                                        navArgument("scan") {
+                                            type = NavType.BoolType
+                                            defaultValue = false
+                                        },
                                     ),
                                 ) { backStackEntry ->
                                     val dateArg = backStackEntry.arguments?.getString("date")
                                     val initialDate = if (dateArg != null) LocalDate.parse(dateArg) else LocalDate.now()
+                                    val autoScan = backStackEntry.arguments?.getBoolean("scan") ?: false
                                     val vm: ParseConfirmViewModel =
                                         viewModel(factory = ParseConfirmViewModel.factory(initialDate))
                                     ParseConfirmScreen(
                                         viewModel = vm,
                                         onDone = { navController.popBackStack() },
+                                        autoScan = autoScan,
                                     )
                                 }
 

@@ -6,7 +6,10 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.tdee.app.TdeeApplication
+import com.tdee.app.data.Macro
 import com.tdee.app.data.NewFoodItem
+import com.tdee.app.data.ProductLookup
+import com.tdee.app.data.ProductLookupService
 import com.tdee.app.data.TdeeRepository
 import com.tdee.app.data.scaledBy
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -34,6 +37,10 @@ data class EditableFoodItem(
     val grams: String = "",
     /** Per-item scale multiplier, e.g. "1.5" for "50% more than the estimate". */
     val factor: String = "1",
+    /** Macros that were LLM-estimated rather than sourced from Open Food Facts (barcode scans only). */
+    val estimatedMacros: Set<Macro> = emptySet(),
+    /** True for a row added by a barcode lookup. Such rows survive a later [ParseConfirmViewModel.parse]. */
+    val fromBarcode: Boolean = false,
 ) {
     val kcalDouble: Double? get() = kcal.toDoubleOrNull()?.takeIf { it >= 0 && it.isFinite() }
 
@@ -44,13 +51,19 @@ data class EditableFoodItem(
     val isValid: Boolean get() = name.isNotBlank() && kcalDouble != null
 
     companion object {
-        fun from(parsed: ParsedFoodItem) = EditableFoodItem(
+        fun from(
+            parsed: ParsedFoodItem,
+            estimatedMacros: Set<Macro> = emptySet(),
+            fromBarcode: Boolean = false,
+        ) = EditableFoodItem(
             name = parsed.name,
             kcal = if (parsed.kcal > 0) parsed.kcal.toString() else "",
             proteinG = if (parsed.proteinG > 0) parsed.proteinG.toString() else "",
             fatG = if (parsed.fatG > 0) parsed.fatG.toString() else "",
             carbG = if (parsed.carbG > 0) parsed.carbG.toString() else "",
             grams = parsed.grams?.takeIf { it > 0 }?.toString() ?: "",
+            estimatedMacros = estimatedMacros,
+            fromBarcode = fromBarcode,
         )
     }
 }
@@ -106,12 +119,19 @@ data class ParseConfirmState(
  *
  * [saveAsMeal] saves the current valid items to the saved-meals library without navigating away.
  * [mealSaved] flips to true briefly to show a confirmation message.
+ *
+ * @param productLookup barcode → product lookup, used by [lookupBarcode]. Defaults to null, in
+ *   which case the scan affordance is simply not shown (the screen checks [scanningAvailable]).
  */
 class ParseConfirmViewModel(
     private val parser: FoodParser,
     private val repo: TdeeRepository,
     private val targetMealId: String? = null,
+    private val productLookup: ProductLookupService? = null,
 ) : ViewModel() {
+
+    /** True when barcode scanning/lookup is available; the screen uses this to show/hide it. */
+    val scanningAvailable: Boolean get() = productLookup != null
 
     private val _state = MutableStateFlow(ParseConfirmState(appendMode = targetMealId != null))
     val state: StateFlow<ParseConfirmState> = _state.asStateFlow()
@@ -150,7 +170,11 @@ class ParseConfirmViewModel(
                     it.copy(
                         parsing = false,
                         parseError = null,
-                        items = result.items.map { p -> EditableFoodItem.from(p) },
+                        // Re-parsing replaces what the last parse produced, but must not discard
+                        // scanned rows: they came from a barcode, not from this text box, and
+                        // silently dropping them would lose work the user cannot get back.
+                        items = it.items.filter { existing -> existing.fromBarcode } +
+                            result.items.map { p -> EditableFoodItem.from(p) },
                         mealName = result.mealName,
                     )
                 }
@@ -163,6 +187,45 @@ class ParseConfirmViewModel(
                 }
             }
         }
+    }
+
+    /**
+     * Looks up [barcode] and appends the result to the item list (a user may scan several items
+     * into one meal). Blank input is a no-op. Reuses [ParseConfirmState.parsing] for the loading
+     * state and [ParseConfirmState.parseError] for not-found/failure messages.
+     */
+    fun lookupBarcode(barcode: String) {
+        // Strip non-digits: KeyboardType.Number still permits "-" and ".", and a stray character
+        // silently turns a valid barcode into a not-found. Covers the scanner path too.
+        val digits = barcode.filter { it.isDigit() }
+        val lookup = productLookup
+        if (digits.isEmpty() || lookup == null) return
+        viewModelScope.launch {
+            _state.update { it.copy(parsing = true, parseError = null) }
+            when (val result = lookup.lookup(digits)) {
+                is ProductLookup.Found -> _state.update {
+                    it.copy(
+                        parsing = false,
+                        parseError = null,
+                        items = it.items + EditableFoodItem.from(result.item, result.gaps, fromBarcode = true),
+                    )
+                }
+                is ProductLookup.NotFound -> _state.update {
+                    it.copy(
+                        parsing = false,
+                        parseError = "No product found for $digits. Add it by hand or describe it above.",
+                    )
+                }
+                is ProductLookup.Failure -> _state.update {
+                    it.copy(parsing = false, parseError = result.message)
+                }
+            }
+        }
+    }
+
+    /** Called when the scanner UI itself fails to launch/complete (not a cancel — that's silent). */
+    fun scannerFailed() {
+        _state.update { it.copy(parseError = "Couldn't open the scanner. Try again or enter the barcode below.") }
     }
 
     // -----------------------------------------------------------------------
@@ -297,7 +360,11 @@ class ParseConfirmViewModel(
             initializer {
                 val app =
                     this[ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY] as TdeeApplication
-                ParseConfirmViewModel(app.container.foodParser, app.container.repository)
+                ParseConfirmViewModel(
+                    app.container.foodParser,
+                    app.container.repository,
+                    productLookup = app.container.productLookupService,
+                )
             }
         }
 
@@ -306,7 +373,11 @@ class ParseConfirmViewModel(
             initializer {
                 val app =
                     this[ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY] as TdeeApplication
-                ParseConfirmViewModel(app.container.foodParser, app.container.repository).also {
+                ParseConfirmViewModel(
+                    app.container.foodParser,
+                    app.container.repository,
+                    productLookup = app.container.productLookupService,
+                ).also {
                     it.selectedDate.value = initialDate
                 }
             }
@@ -317,7 +388,12 @@ class ParseConfirmViewModel(
             initializer {
                 val app =
                     this[ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY] as TdeeApplication
-                ParseConfirmViewModel(app.container.foodParser, app.container.repository, targetMealId)
+                ParseConfirmViewModel(
+                    app.container.foodParser,
+                    app.container.repository,
+                    targetMealId,
+                    app.container.productLookupService,
+                )
             }
         }
     }

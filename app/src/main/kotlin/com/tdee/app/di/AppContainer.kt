@@ -14,6 +14,8 @@ import com.tdee.app.data.MIGRATION_2_3
 import com.tdee.app.data.MIGRATION_3_4
 import com.tdee.app.data.MIGRATION_4_5
 import com.tdee.app.data.MIGRATION_5_6
+import com.tdee.app.data.OpenFoodFactsClient
+import com.tdee.app.data.ProductLookupService
 import com.tdee.app.data.SavedMealDao
 import com.tdee.app.data.FoodEntryDao
 import com.tdee.app.data.HealthConnectSyncManager
@@ -80,6 +82,16 @@ class AppContainer(context: Context) {
 
     val driveClient: DriveClient by lazy {
         DriveClient(client = httpClient, token = { driveAuth.token() }, onUnauthorized = { driveAuth.invalidate() })
+    }
+
+    /** Barcode → product lookup against Open Food Facts. */
+    val openFoodFactsClient: OpenFoodFactsClient by lazy {
+        OpenFoodFactsClient(httpClient)
+    }
+
+    /** [openFoodFactsClient] plus LLM gap-filling for macros OFF didn't report. */
+    val productLookupService: ProductLookupService by lazy {
+        ProductLookupService(openFoodFactsClient, foodParser)
     }
 
     val repository: TdeeRepository by lazy {

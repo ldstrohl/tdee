@@ -2,17 +2,12 @@ package com.tdee.app.addfood
 
 import com.tdee.app.data.LlmProvider
 import com.tdee.app.data.LlmSettings
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
-import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
-import java.io.IOException
 
 /**
  * Client-direct, bring-your-own-key [FoodParser]. Reads the active provider/model/key from
@@ -95,7 +90,7 @@ internal class GeminiAdapter(
             .post(body.toRequestBody(JSON_MEDIA))
             .build()
 
-        return when (val outcome = executeWithRetry(client, request)) {
+        return when (val outcome = executeWithRetry(client, request, "the meal parser")) {
             is HttpOutcome.Error -> outcome.failure
             is HttpOutcome.Body -> extractInner(outcome.text) { json ->
                 json.getJSONArray("candidates").getJSONObject(0)
@@ -130,7 +125,7 @@ internal class OpenAiAdapter(
             .post(body.toRequestBody(JSON_MEDIA))
             .build()
 
-        return when (val outcome = executeWithRetry(client, request)) {
+        return when (val outcome = executeWithRetry(client, request, "the meal parser")) {
             is HttpOutcome.Error -> outcome.failure
             is HttpOutcome.Body -> extractInner(outcome.text) { json ->
                 json.getJSONArray("choices").getJSONObject(0)
@@ -164,7 +159,7 @@ internal class AnthropicAdapter(
             .post(body.toRequestBody(JSON_MEDIA))
             .build()
 
-        return when (val outcome = executeWithRetry(client, request)) {
+        return when (val outcome = executeWithRetry(client, request, "the meal parser")) {
             is HttpOutcome.Error -> outcome.failure
             is HttpOutcome.Body -> extractInner(outcome.text) { json ->
                 json.getJSONArray("content").getJSONObject(0).getString("text")
@@ -172,78 +167,6 @@ internal class AnthropicAdapter(
         }
     }
 }
-
-// ---------------------------------------------------------------------------
-// Shared HTTP execution, retry, error mapping, and JSON extraction
-// ---------------------------------------------------------------------------
-
-private const val MAX_ATTEMPTS = 3
-private val JSON_MEDIA = "application/json".toMediaType()
-
-private sealed interface HttpOutcome {
-    data class Body(val text: String) : HttpOutcome
-    data class Error(val failure: ParseResult.Failure) : HttpOutcome
-}
-
-/**
- * Sends [request], retrying up to [MAX_ATTEMPTS] times on transient 429/500/503 and network errors
- * with backoff `400*(attempt+1)`ms. Maps terminal failures to a typed [ParseErrorKind].
- */
-private suspend fun executeWithRetry(client: OkHttpClient, request: Request): HttpOutcome =
-    withContext(Dispatchers.IO) {
-        var lastError: HttpOutcome.Error = HttpOutcome.Error(
-            ParseResult.Failure(ParseErrorKind.UNKNOWN, "Couldn't parse the meal — try again."),
-        )
-        for (attempt in 0 until MAX_ATTEMPTS) {
-            try {
-                client.newCall(request).execute().use { response ->
-                    if (response.isSuccessful) {
-                        return@withContext HttpOutcome.Body(response.body?.string().orEmpty())
-                    }
-                    val code = response.code
-                    val retryable = code == 429 || code == 500 || code == 503
-                    if (retryable && attempt < MAX_ATTEMPTS - 1) {
-                        // fall through to backoff + retry
-                    } else {
-                        val errBody = response.body?.string().orEmpty()
-                        return@withContext HttpOutcome.Error(mapHttpError(code, errBody))
-                    }
-                }
-            } catch (_: IOException) {
-                if (attempt >= MAX_ATTEMPTS - 1) {
-                    return@withContext HttpOutcome.Error(
-                        ParseResult.Failure(ParseErrorKind.NETWORK, "No internet connection."),
-                    )
-                }
-                lastError = HttpOutcome.Error(
-                    ParseResult.Failure(ParseErrorKind.NETWORK, "No internet connection."),
-                )
-            }
-            delay(400L * (attempt + 1))
-        }
-        lastError
-    }
-
-private fun mapHttpError(code: Int, body: String): ParseResult.Failure = when {
-    code == 401 || code == 403 ->
-        ParseResult.Failure(ParseErrorKind.AUTH, "Invalid API key — check it in Settings.")
-    code == 429 ->
-        ParseResult.Failure(ParseErrorKind.RATE_LIMITED, "Rate limited — try again in a moment.")
-    code in 500..599 ->
-        ParseResult.Failure(ParseErrorKind.SERVER, "The provider had an error — try again.")
-    // Other terminal errors (notably 400 — bad request, model not found, "credit balance too low",
-    // etc.) carry an actionable reason from the provider. Surface it instead of a generic message.
-    else ->
-        ParseResult.Failure(
-            ParseErrorKind.UNKNOWN,
-            extractProviderError(body) ?: "Couldn't parse the meal — try again.",
-        )
-}
-
-/** Provider error string from its JSON envelope. Gemini/OpenAI/Anthropic all use `error.message`. */
-private fun extractProviderError(body: String): String? =
-    runCatching { JSONObject(body).getJSONObject("error").getString("message") }
-        .getOrNull()?.takeIf { it.isNotBlank() }
 
 /**
  * Pulls the model's JSON text out of a provider envelope via [innerText], then parses it into
