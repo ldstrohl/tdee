@@ -13,7 +13,7 @@ package com.tdee.app.addfood
  */
 class LocalHeuristicFoodParser : FoodParser {
 
-    override suspend fun parse(text: String): ParseResult {
+    override suspend fun parse(text: String, imageJpeg: ByteArray?): ParseResult {
         // Split on commas and the standalone word "and" (case-insensitive).
         val items = SPLIT_REGEX.split(text)
             .map { it.trim() }

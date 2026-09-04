@@ -47,7 +47,7 @@ class ProductLookupServiceTest {
         var invoked = false
         var lastText: String? = null
 
-        override suspend fun parse(text: String): ParseResult {
+        override suspend fun parse(text: String, imageJpeg: ByteArray?): ParseResult {
             invoked = true
             lastText = text
             return result
