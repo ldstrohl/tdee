@@ -1,5 +1,8 @@
 package com.tdee.app.addfood
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -30,6 +33,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,6 +44,10 @@ import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import com.tdee.app.data.Macro
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.IOException
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -63,6 +71,17 @@ fun ParseConfirmScreen(
 
     val context = LocalContext.current
     var barcodeInput by remember { mutableStateOf("") }
+
+    var captureUri by remember { mutableStateOf<Uri?>(null) }
+    val scope = rememberCoroutineScope()
+    val takePicture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+        val uri = captureUri
+        if (!ok || uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val bytes = withContext(Dispatchers.IO) { LabelPhoto.readDownscaledJpeg(context, uri) }
+            if (bytes == null) viewModel.labelPhotoFailed() else viewModel.parseLabel(bytes)
+        }
+    }
 
     fun launchScanner() {
         val options = GmsBarcodeScannerOptions.Builder()
@@ -196,14 +215,39 @@ fun ParseConfirmScreen(
             }
         }
 
-        if (viewModel.scanningAvailable) {
-            Button(
-                onClick = { launchScanner() },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("Scan barcode")
+        // The two camera affordances sit side by side; manual barcode entry is the fallback below
+        // them. "Photograph label" is not gated on scanningAvailable, which is about the Open Food
+        // Facts lookup that the label path does not use.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (viewModel.scanningAvailable) {
+                Button(
+                    onClick = { launchScanner() },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Scan barcode")
+                }
             }
+            OutlinedButton(
+                onClick = {
+                    try {
+                        val uri = LabelPhoto.newCaptureUri(context)
+                        captureUri = uri
+                        takePicture.launch(uri)
+                    } catch (_: IOException) {
+                        viewModel.labelPhotoFailed()
+                    }
+                },
+                enabled = !state.parsing,
+                modifier = Modifier.weight(1f),
+            ) {
+                Text("Photograph label")
+            }
+        }
 
+        if (viewModel.scanningAvailable) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),

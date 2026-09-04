@@ -263,6 +263,7 @@ class ParseConfirmBarcodeTest {
 
         assertTrue(vm.state.value.items.isEmpty())
         assertTrue(vm.state.value.parseError?.contains("0049000006344") == true)
+        assertTrue(vm.state.value.parseError?.contains("Photograph the nutrition label") == true)
     }
 
     @Test
