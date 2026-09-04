@@ -39,16 +39,18 @@ object LabelPhoto {
      */
     fun readDownscaledJpeg(context: Context, uri: Uri): ByteArray? {
         return try {
-            // First pass: read dimensions only.
+            // First pass: read dimensions only. decodeStream returns null by contract when
+            // inJustDecodeBounds is set, so the result says nothing about success. Read the answer
+            // out of the options instead, and check the stream separately.
             val dimensions = BitmapFactory.Options().apply {
                 inJustDecodeBounds = true
             }
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                BitmapFactory.decodeStream(input, null, dimensions)
-            } ?: return null
+            val bounds = context.contentResolver.openInputStream(uri) ?: return null
+            bounds.use { input -> BitmapFactory.decodeStream(input, null, dimensions) }
 
             val width = dimensions.outWidth
             val height = dimensions.outHeight
+            if (width <= 0 || height <= 0) return null
 
             // Compute inSampleSize as the largest power of two such that both dimensions
             // stay at or above MAX_EDGE.
