@@ -88,8 +88,15 @@ internal fun mapHttpError(code: Int, body: String): ParseResult.Failure = when {
         ParseResult.Failure(ParseErrorKind.AUTH, "Invalid API key — check it in Settings.")
     code == 429 ->
         ParseResult.Failure(ParseErrorKind.RATE_LIMITED, "Rate limited — try again in a moment.")
+    // A 5xx usually says something worth reading. Gemini answers an overloaded model with
+    // "This model is currently experiencing high demand", which tells the user to wait rather
+    // than to go hunting for a fault of their own. Fall back to the generic wording only when
+    // the body carries no reason.
     code in 500..599 ->
-        ParseResult.Failure(ParseErrorKind.SERVER, "The provider had an error — try again.")
+        ParseResult.Failure(
+            ParseErrorKind.SERVER,
+            extractProviderError(body) ?: "The provider had an error — try again.",
+        )
     // Other terminal errors (notably 400 — bad request, model not found, "credit balance too low",
     // etc.) carry an actionable reason from the provider. Surface it instead of a generic message.
     else ->
