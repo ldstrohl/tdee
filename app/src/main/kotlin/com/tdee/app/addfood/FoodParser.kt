@@ -12,8 +12,11 @@ interface FoodParser {
      * Parse [text] (a natural-language food description, e.g. "2 eggs and a slice of toast") into
      * structured food items. Returns a [ParseResult.Success] (possibly with an empty list when the
      * text names no food) or a [ParseResult.Failure] that the UI surfaces to the user.
+     *
+     * When [imageJpeg] is non-null, it is a JPEG photo of a nutrition label; the parser transcribes
+     * the printed table instead of estimating from prose, and [text] may then be blank.
      */
-    suspend fun parse(text: String): ParseResult
+    suspend fun parse(text: String, imageJpeg: ByteArray? = null): ParseResult
 }
 
 /**
@@ -66,5 +69,5 @@ data class ParsedFoodItem(
  * Stands in where a [FoodParser] is needed but no parsing should happen.
  */
 class StubFoodParser : FoodParser {
-    override suspend fun parse(text: String): ParseResult = ParseResult.Success(emptyList())
+    override suspend fun parse(text: String, imageJpeg: ByteArray?): ParseResult = ParseResult.Success(emptyList())
 }

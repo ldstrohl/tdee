@@ -65,10 +65,22 @@ class AppContainer(context: Context) {
         DriveAuth(appContext, appContext.getSharedPreferences("com.tdee.app.settings", Context.MODE_PRIVATE))
     }
 
-    /** Shared HTTP client. `callTimeout` bounds the whole call — OkHttp's defaults set only
-     *  per-phase timeouts, so a stalled transfer would otherwise hang indefinitely. */
+    /**
+     * Shared HTTP client. `callTimeout` is the real bound: it covers the whole call, including
+     * redirects and retries, which the per-phase timeouts do not.
+     *
+     * Read and write are raised to match it because OkHttp defaults them to 10 seconds, and a
+     * vision request routinely takes longer than that. A nutrition-label photo went out as a
+     * 185 kB body and the model answered well after the default cut the socket, so every label
+     * parse failed as a timeout. Raising them does not widen the worst case; `callTimeout` still
+     * caps every call at 60 seconds.
+     */
     val httpClient: OkHttpClient by lazy {
-        OkHttpClient.Builder().callTimeout(60, TimeUnit.SECONDS).build()
+        OkHttpClient.Builder()
+            .callTimeout(60, TimeUnit.SECONDS)
+            .readTimeout(60, TimeUnit.SECONDS)
+            .writeTimeout(60, TimeUnit.SECONDS)
+            .build()
     }
 
     /**

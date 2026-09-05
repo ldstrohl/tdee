@@ -121,4 +121,36 @@ class HttpSupportTest {
         assertEquals(ParseErrorKind.NETWORK, failure.kind)
         assertEquals("Couldn't reach the meal parser — try again.", failure.message)
     }
+
+    // -----------------------------------------------------------------------
+    // mapHttpError: 5xx branch extracting provider error messages
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `a 503 with Gemini body surfaces the provider's high demand message`() {
+        val geminiBody = """{"error":{"code":503,"message":"This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.","status":"UNAVAILABLE"}}"""
+        val failure = mapHttpError(503, geminiBody)
+
+        assertEquals(ParseErrorKind.SERVER, failure.kind)
+        assertTrue(failure.message.contains("high demand"))
+    }
+
+    @Test
+    fun `a 500 with missing error message falls back to generic wording`() {
+        val failure1 = mapHttpError(500, "")
+        assertEquals(ParseErrorKind.SERVER, failure1.kind)
+        assertEquals("The provider had an error — try again.", failure1.message)
+
+        val failure2 = mapHttpError(500, "{}")
+        assertEquals(ParseErrorKind.SERVER, failure2.kind)
+        assertEquals("The provider had an error — try again.", failure2.message)
+    }
+
+    @Test
+    fun `a 401 maps to AUTH regardless of body`() {
+        val failure = mapHttpError(401, """{"error":{"message":"some server message"}}""")
+
+        assertEquals(ParseErrorKind.AUTH, failure.kind)
+        assertEquals("Invalid API key — check it in Settings.", failure.message)
+    }
 }

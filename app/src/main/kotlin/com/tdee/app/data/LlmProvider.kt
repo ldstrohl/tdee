@@ -12,10 +12,13 @@ enum class LlmProvider(
     val models: List<String>,
     val defaultModel: String,
 ) {
+    // The "-latest" aliases track whatever Flash/Pro model Google currently serves. Pinned 2.5
+    // names still resolve, but the free tier answers them with 503 "high demand" on every call,
+    // and the alias does not have that problem.
     GEMINI(
         displayName = "Google Gemini",
-        models = listOf("gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-pro"),
-        defaultModel = "gemini-2.5-flash",
+        models = listOf("gemini-flash-latest", "gemini-flash-lite-latest", "gemini-pro-latest"),
+        defaultModel = "gemini-flash-latest",
     ),
     OPENAI(
         displayName = "OpenAI",

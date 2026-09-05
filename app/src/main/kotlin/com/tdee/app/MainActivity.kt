@@ -18,8 +18,6 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import com.tdee.app.addfood.AddFoodScreen
-import com.tdee.app.addfood.AddFoodViewModel
 import com.tdee.app.addfood.EditFoodEntryScreen
 import com.tdee.app.addfood.EditFoodEntryViewModel
 import com.tdee.app.addfood.ParseConfirmScreen
@@ -105,9 +103,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                     DashboardScreen(
                                         viewModel = vm,
-                                        onAddFood = { date -> navController.navigate("add_food?date=$date") },
                                         onLogText = { date -> navController.navigate("log_text?date=$date") },
-                                        onScan = { date -> navController.navigate("log_text?date=$date&scan=true") },
                                         onAddWeight = { navController.navigate("weight") },
                                         onOpenSettings = { navController.navigate("settings") },
                                         onOpenInsights = { navController.navigate("insights") },
@@ -199,48 +195,22 @@ class MainActivity : ComponentActivity() {
                                 }
 
                                 composable(
-                                    route = "add_food?date={date}",
-                                    arguments = listOf(
-                                        navArgument("date") {
-                                            type = NavType.StringType
-                                            nullable = true
-                                            defaultValue = null
-                                        }
-                                    ),
-                                ) { backStackEntry ->
-                                    val dateArg = backStackEntry.arguments?.getString("date")
-                                    val initialDate = if (dateArg != null) LocalDate.parse(dateArg) else LocalDate.now()
-                                    val vm: AddFoodViewModel =
-                                        viewModel(factory = AddFoodViewModel.factory(initialDate))
-                                    AddFoodScreen(
-                                        viewModel = vm,
-                                        onDone = { navController.popBackStack() },
-                                    )
-                                }
-
-                                composable(
-                                    route = "log_text?date={date}&scan={scan}",
+                                    route = "log_text?date={date}",
                                     arguments = listOf(
                                         navArgument("date") {
                                             type = NavType.StringType
                                             nullable = true
                                             defaultValue = null
                                         },
-                                        navArgument("scan") {
-                                            type = NavType.BoolType
-                                            defaultValue = false
-                                        },
                                     ),
                                 ) { backStackEntry ->
                                     val dateArg = backStackEntry.arguments?.getString("date")
                                     val initialDate = if (dateArg != null) LocalDate.parse(dateArg) else LocalDate.now()
-                                    val autoScan = backStackEntry.arguments?.getBoolean("scan") ?: false
                                     val vm: ParseConfirmViewModel =
                                         viewModel(factory = ParseConfirmViewModel.factory(initialDate))
                                     ParseConfirmScreen(
                                         viewModel = vm,
                                         onDone = { navController.popBackStack() },
-                                        autoScan = autoScan,
                                     )
                                 }
 

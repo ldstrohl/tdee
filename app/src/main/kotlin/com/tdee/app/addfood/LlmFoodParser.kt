@@ -1,5 +1,6 @@
 package com.tdee.app.addfood
 
+import android.util.Base64
 import com.tdee.app.data.LlmProvider
 import com.tdee.app.data.LlmSettings
 import okhttp3.OkHttpClient
@@ -36,7 +37,7 @@ class LlmFoodParser(
         LlmProvider.ANTHROPIC to AnthropicAdapter(client, anthropicUrl),
     )
 
-    override suspend fun parse(text: String): ParseResult {
+    override suspend fun parse(text: String, imageJpeg: ByteArray?): ParseResult {
         val provider = settings.provider
         val key = settings.keyFor(provider)
         if (key.isNullOrBlank()) {
@@ -46,7 +47,7 @@ class LlmFoodParser(
             )
         }
         val model = settings.modelFor(provider)
-        return adapters.getValue(provider).parse(text, model, key)
+        return adapters.getValue(provider).parse(text, model, key, imageJpeg)
     }
 }
 
@@ -56,7 +57,7 @@ class LlmFoodParser(
 
 /** One provider's request shape + response extraction. Visible for MockWebServer tests. */
 internal interface LlmAdapter {
-    suspend fun parse(text: String, model: String, apiKey: String): ParseResult
+    suspend fun parse(text: String, model: String, apiKey: String, imageJpeg: ByteArray? = null): ParseResult
 }
 
 internal class GeminiAdapter(
@@ -64,15 +65,28 @@ internal class GeminiAdapter(
     private val baseUrl: String,
 ) : LlmAdapter {
 
-    override suspend fun parse(text: String, model: String, apiKey: String): ParseResult {
+    override suspend fun parse(text: String, model: String, apiKey: String, imageJpeg: ByteArray?): ParseResult {
+        val systemPrompt = if (imageJpeg != null) LABEL_SYSTEM_PROMPT else SYSTEM_PROMPT
+        val userText = userText(text, imageJpeg)
+        val parts = JSONArray().put(JSONObject().put("text", userText))
+        if (imageJpeg != null) {
+            parts.put(
+                JSONObject().put(
+                    "inlineData",
+                    JSONObject()
+                        .put("mimeType", "image/jpeg")
+                        .put("data", base64(imageJpeg)),
+                ),
+            )
+        }
         val body = JSONObject()
-            .put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", SYSTEM_PROMPT))))
+            .put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", systemPrompt))))
             .put(
                 "contents",
                 JSONArray().put(
                     JSONObject()
                         .put("role", "user")
-                        .put("parts", JSONArray().put(JSONObject().put("text", text))),
+                        .put("parts", parts),
                 ),
             )
             .put(
@@ -106,14 +120,27 @@ internal class OpenAiAdapter(
     private val url: String,
 ) : LlmAdapter {
 
-    override suspend fun parse(text: String, model: String, apiKey: String): ParseResult {
+    override suspend fun parse(text: String, model: String, apiKey: String, imageJpeg: ByteArray?): ParseResult {
+        val systemPrompt = if (imageJpeg != null) LABEL_SYSTEM_PROMPT else SYSTEM_PROMPT
+        val userText = userText(text, imageJpeg)
+        val userContent: Any = if (imageJpeg != null) {
+            JSONArray()
+                .put(JSONObject().put("type", "text").put("text", userText))
+                .put(
+                    JSONObject()
+                        .put("type", "image_url")
+                        .put("image_url", JSONObject().put("url", "data:image/jpeg;base64,${base64(imageJpeg)}")),
+                )
+        } else {
+            userText
+        }
         val body = JSONObject()
             .put("model", model)
             .put(
                 "messages",
                 JSONArray()
-                    .put(JSONObject().put("role", "system").put("content", SYSTEM_PROMPT))
-                    .put(JSONObject().put("role", "user").put("content", text)),
+                    .put(JSONObject().put("role", "system").put("content", systemPrompt))
+                    .put(JSONObject().put("role", "user").put("content", userContent)),
             )
             .put("temperature", 0)
             .put("response_format", JSONObject().put("type", "json_object"))
@@ -140,15 +167,34 @@ internal class AnthropicAdapter(
     private val url: String,
 ) : LlmAdapter {
 
-    override suspend fun parse(text: String, model: String, apiKey: String): ParseResult {
+    override suspend fun parse(text: String, model: String, apiKey: String, imageJpeg: ByteArray?): ParseResult {
+        val systemPrompt = if (imageJpeg != null) LABEL_SYSTEM_PROMPT else SYSTEM_PROMPT
+        val userText = userText(text, imageJpeg)
+        val userContent: Any = if (imageJpeg != null) {
+            JSONArray()
+                .put(
+                    JSONObject()
+                        .put("type", "image")
+                        .put(
+                            "source",
+                            JSONObject()
+                                .put("type", "base64")
+                                .put("media_type", "image/jpeg")
+                                .put("data", base64(imageJpeg)),
+                        ),
+                )
+                .put(JSONObject().put("type", "text").put("text", userText))
+        } else {
+            userText
+        }
         val body = JSONObject()
             .put("model", model)
             .put("max_tokens", 4096)
             .put("temperature", 0)
-            .put("system", SYSTEM_PROMPT)
+            .put("system", systemPrompt)
             .put(
                 "messages",
-                JSONArray().put(JSONObject().put("role", "user").put("content", text)),
+                JSONArray().put(JSONObject().put("role", "user").put("content", userContent)),
             )
             .toString()
 
@@ -167,6 +213,13 @@ internal class AnthropicAdapter(
         }
     }
 }
+
+/** Text sent alongside an image part; providers dislike an empty user turn. */
+private fun userText(text: String, imageJpeg: ByteArray?): String =
+    if (imageJpeg != null && text.isBlank()) "Read this nutrition label." else text
+
+private fun base64(bytes: ByteArray): String =
+    Base64.encodeToString(bytes, Base64.NO_WRAP)
 
 /**
  * Pulls the model's JSON text out of a provider envelope via [innerText], then parses it into
@@ -227,6 +280,21 @@ Rules:
 - If the text contains no food, return an empty items array.
 - All numbers must be non-negative. Round to whole numbers.
 - Also produce "mealName": a short display name for the whole meal (e.g. "Chicken sandwich & fries"), keeping the user's wording where sensible.
+Return ONLY JSON of the form {"mealName":"","items":[{"name":"","displayQuantity":0,"unit":"","grams":0,"kcal":0,"proteinG":0,"fatG":0,"carbG":0}]}.
+""".trim()
+
+private val LABEL_SYSTEM_PROMPT = """
+You read a photo of a food package's Nutrition Facts / nutrition information panel and transcribe it. This is OCR plus arithmetic, not estimation.
+
+Rules:
+- Report ONE item, for ONE serving as the label defines it.
+- Put the serving size into "grams" (grams only). If the label gives a non-gram serving (e.g. ml, "1 cup"), set "grams" to the gram weight if the label also prints one, otherwise omit "grams". Set "displayQuantity" to 1 and "unit" to "serving".
+- If the panel lists values per 100 g only (no per-serving numbers), report per 100 g instead: "grams" = 100, "unit" = "100 g".
+- Use the label's own printed numbers verbatim. Do not round to typical values and do not substitute values from a similar product.
+- If energy is printed only in kJ, convert to kcal by dividing by 4.184.
+- "name": the product name from the package if legible, otherwise a short description of the food.
+- "mealName": the same product name.
+- If no nutrition panel is legible in the photo, return an empty items array. Do not guess.
 Return ONLY JSON of the form {"mealName":"","items":[{"name":"","displayQuantity":0,"unit":"","grams":0,"kcal":0,"proteinG":0,"fatG":0,"carbG":0}]}.
 """.trim()
 

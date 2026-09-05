@@ -382,7 +382,7 @@ class DashboardViewModelTest {
             .first() as DashboardUiState.Loaded
         assertEquals(ConsumedTotals.Empty, initial.consumedTotals)
 
-        // Add a food entry via the repo directly (simulates what AddFoodViewModel does).
+        // Add a food entry via the repo directly (simulates what the food log screen does).
         repo.addFood(
             name = "Test",
             kcal = 500.0,

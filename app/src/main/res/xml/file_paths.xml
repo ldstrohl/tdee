@@ -2,4 +2,6 @@
 <paths>
     <!-- Exposes cacheDir/export/ so exported CSVs can be shared via FileProvider. -->
     <cache-path name="export" path="export/" />
+    <!-- Exposes cacheDir/label/ so the camera app can write a nutrition-label photo through the FileProvider. -->
+    <cache-path name="label" path="label/" />
 </paths>

@@ -39,8 +39,11 @@ data class EditableFoodItem(
     val factor: String = "1",
     /** Macros that were LLM-estimated rather than sourced from Open Food Facts (barcode scans only). */
     val estimatedMacros: Set<Macro> = emptySet(),
-    /** True for a row added by a barcode lookup. Such rows survive a later [ParseConfirmViewModel.parse]. */
-    val fromBarcode: Boolean = false,
+    /**
+     * True for a row produced by a barcode lookup or a label photo, rather than by the text box;
+     * such rows survive a later [ParseConfirmViewModel.parse].
+     */
+    val fromScan: Boolean = false,
 ) {
     val kcalDouble: Double? get() = kcal.toDoubleOrNull()?.takeIf { it >= 0 && it.isFinite() }
 
@@ -54,7 +57,7 @@ data class EditableFoodItem(
         fun from(
             parsed: ParsedFoodItem,
             estimatedMacros: Set<Macro> = emptySet(),
-            fromBarcode: Boolean = false,
+            fromScan: Boolean = false,
         ) = EditableFoodItem(
             name = parsed.name,
             kcal = if (parsed.kcal > 0) parsed.kcal.toString() else "",
@@ -63,7 +66,7 @@ data class EditableFoodItem(
             carbG = if (parsed.carbG > 0) parsed.carbG.toString() else "",
             grams = parsed.grams?.takeIf { it > 0 }?.toString() ?: "",
             estimatedMacros = estimatedMacros,
-            fromBarcode = fromBarcode,
+            fromScan = fromScan,
         )
     }
 }
@@ -171,9 +174,10 @@ class ParseConfirmViewModel(
                         parsing = false,
                         parseError = null,
                         // Re-parsing replaces what the last parse produced, but must not discard
-                        // scanned rows: they came from a barcode, not from this text box, and
-                        // silently dropping them would lose work the user cannot get back.
-                        items = it.items.filter { existing -> existing.fromBarcode } +
+                        // scanned rows: they came from a barcode or a label photo, not from this
+                        // text box, and silently dropping them would lose work the user cannot
+                        // get back.
+                        items = it.items.filter { existing -> existing.fromScan } +
                             result.items.map { p -> EditableFoodItem.from(p) },
                         mealName = result.mealName,
                     )
@@ -207,13 +211,13 @@ class ParseConfirmViewModel(
                     it.copy(
                         parsing = false,
                         parseError = null,
-                        items = it.items + EditableFoodItem.from(result.item, result.gaps, fromBarcode = true),
+                        items = it.items + EditableFoodItem.from(result.item, result.gaps, fromScan = true),
                     )
                 }
                 is ProductLookup.NotFound -> _state.update {
                     it.copy(
                         parsing = false,
-                        parseError = "No product found for $digits. Add it by hand or describe it above.",
+                        parseError = "No product found for $digits. Photograph the nutrition label instead, or describe it above.",
                     )
                 }
                 is ProductLookup.Failure -> _state.update {
@@ -226,6 +230,44 @@ class ParseConfirmViewModel(
     /** Called when the scanner UI itself fails to launch/complete (not a cancel — that's silent). */
     fun scannerFailed() {
         _state.update { it.copy(parseError = "Couldn't open the scanner. Try again or enter the barcode below.") }
+    }
+
+    /**
+     * Transcribes a nutrition-label photo and appends the result to the item list. Like a barcode
+     * scan, several labels can be photographed into one meal.
+     */
+    fun parseLabel(imageJpeg: ByteArray) {
+        viewModelScope.launch {
+            _state.update { it.copy(parsing = true, parseError = null) }
+            when (val result = parser.parse("", imageJpeg)) {
+                is ParseResult.Success -> if (result.items.isEmpty()) {
+                    _state.update {
+                        it.copy(
+                            parsing = false,
+                            parseError = "Couldn't read a nutrition panel in that photo. Try again with the " +
+                                "label filling the frame, or describe the food above.",
+                        )
+                    }
+                } else {
+                    _state.update {
+                        it.copy(
+                            parsing = false,
+                            parseError = null,
+                            items = it.items + result.items.map { p -> EditableFoodItem.from(p, fromScan = true) },
+                            mealName = it.mealName ?: result.mealName,
+                        )
+                    }
+                }
+                is ParseResult.Failure -> _state.update {
+                    it.copy(parsing = false, parseError = result.message)
+                }
+            }
+        }
+    }
+
+    /** Called when the camera returned but the photo could not be read or decoded. */
+    fun labelPhotoFailed() {
+        _state.update { it.copy(parseError = "Couldn't read that photo. Try again.") }
     }
 
     // -----------------------------------------------------------------------

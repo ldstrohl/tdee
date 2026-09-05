@@ -38,7 +38,7 @@ import java.time.ZoneOffset
  * persist the expected entries, and invalid items (blank name / invalid kcal) are skipped on save.
  *
  * Robolectric + in-memory Room, fixed clock (noon 2026-06-21 UTC) and fake [CurrentUser], matching
- * the harness in AddFoodViewModelTest.
+ * the harness in AddWeightViewModelTest.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
@@ -618,7 +618,7 @@ class ParseConfirmViewModelTest {
     @Test
     fun `parse failure sets parseError and clears items`() = runTest {
         val failing = object : FoodParser {
-            override suspend fun parse(text: String): ParseResult =
+            override suspend fun parse(text: String, imageJpeg: ByteArray?): ParseResult =
                 ParseResult.Failure(ParseErrorKind.NO_KEY, "Add an API key in Settings.")
         }
         val failVm = ParseConfirmViewModel(failing, repo)
@@ -647,7 +647,7 @@ class ParseConfirmViewModelTest {
     @Test
     fun `parse carries the parser's mealName into state`() = runTest {
         val named = object : FoodParser {
-            override suspend fun parse(text: String): ParseResult =
+            override suspend fun parse(text: String, imageJpeg: ByteArray?): ParseResult =
                 ParseResult.Success(emptyList(), mealName = "Eggs & oatmeal")
         }
         val namedVm = ParseConfirmViewModel(named, repo)

@@ -66,7 +66,7 @@ class ParseConfirmBarcodeTest {
     /** A [FoodParser] double used only for gap-filling, so the scan tests are independent of the LLM. */
     private class RecordingParser(private val result: ParseResult) : FoodParser {
         var invoked = false
-        override suspend fun parse(text: String): ParseResult {
+        override suspend fun parse(text: String, imageJpeg: ByteArray?): ParseResult {
             invoked = true
             return result
         }
@@ -263,6 +263,7 @@ class ParseConfirmBarcodeTest {
 
         assertTrue(vm.state.value.items.isEmpty())
         assertTrue(vm.state.value.parseError?.contains("0049000006344") == true)
+        assertTrue(vm.state.value.parseError?.contains("Photograph the nutrition label") == true)
     }
 
     @Test
