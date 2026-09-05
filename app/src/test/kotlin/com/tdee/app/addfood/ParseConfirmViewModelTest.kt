@@ -38,7 +38,7 @@ import java.time.ZoneOffset
  * persist the expected entries, and invalid items (blank name / invalid kcal) are skipped on save.
  *
  * Robolectric + in-memory Room, fixed clock (noon 2026-06-21 UTC) and fake [CurrentUser], matching
- * the harness in AddFoodViewModelTest.
+ * the harness in AddWeightViewModelTest.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)

@@ -58,7 +58,6 @@ import java.time.format.DateTimeFormatter
 fun ParseConfirmScreen(
     viewModel: ParseConfirmViewModel,
     onDone: () -> Unit,
-    autoScan: Boolean = false,
 ) {
     val state by viewModel.state.collectAsState()
     val saved by viewModel.saved.collectAsState()
@@ -70,7 +69,6 @@ fun ParseConfirmScreen(
     }
 
     val context = LocalContext.current
-    var barcodeInput by remember { mutableStateOf("") }
 
     var captureUri by remember { mutableStateOf<Uri?>(null) }
     val scope = rememberCoroutineScope()
@@ -96,10 +94,6 @@ fun ParseConfirmScreen(
             .addOnSuccessListener { barcode -> barcode.rawValue?.let(viewModel::lookupBarcode) }
             .addOnCanceledListener { /* user backed out — no message */ }
             .addOnFailureListener { viewModel.scannerFailed() }
-    }
-
-    LaunchedEffect(Unit) {
-        if (autoScan && viewModel.scanningAvailable) launchScanner()
     }
 
     val today = remember { LocalDate.now() }
@@ -196,7 +190,7 @@ fun ParseConfirmScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                if (state.appendMode) "Add to meal" else "Describe a meal",
+                if (state.appendMode) "Add to meal" else "Add food",
                 style = MaterialTheme.typography.headlineSmall,
             )
             TextButton(onClick = onDone) { Text("Back") }
@@ -215,16 +209,17 @@ fun ParseConfirmScreen(
             }
         }
 
-        // The two camera affordances sit side by side; manual barcode entry is the fallback below
-        // them. "Photograph label" is not gated on scanningAvailable, which is about the Open Food
-        // Facts lookup that the label path does not use.
+        // The two camera affordances are peers, so they carry the same weight. Only "Parse" below
+        // is filled. "Photograph label" is not gated on scanningAvailable, which is about the Open
+        // Food Facts lookup that the label path does not use.
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (viewModel.scanningAvailable) {
-                Button(
+                OutlinedButton(
                     onClick = { launchScanner() },
+                    enabled = !state.parsing,
                     modifier = Modifier.weight(1f),
                 ) {
                     Text("Scan barcode")
@@ -244,25 +239,6 @@ fun ParseConfirmScreen(
                 modifier = Modifier.weight(1f),
             ) {
                 Text("Photograph label")
-            }
-        }
-
-        if (viewModel.scanningAvailable) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                OutlinedTextField(
-                    value = barcodeInput,
-                    onValueChange = { barcodeInput = it.filter(Char::isDigit) },
-                    label = { Text("Enter barcode") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                )
-                Button(onClick = { viewModel.lookupBarcode(barcodeInput) }) {
-                    Text("Look up")
-                }
             }
         }
 
@@ -341,7 +317,7 @@ fun ParseConfirmScreen(
             onClick = viewModel::addItem,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text("Add item")
+            Text("Add item manually")
         }
 
         if (!state.appendMode) {

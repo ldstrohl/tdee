@@ -35,7 +35,7 @@ import java.time.ZoneOffset
  * Unit tests for [AddWeightViewModel]: validation (canSave) and persistence with lb→kg conversion.
  *
  * Uses Robolectric + in-memory Room. A fixed clock and fake [CurrentUser] keep results
- * deterministic. Pattern matches [com.tdee.app.addfood.AddFoodViewModelTest].
+ * deterministic. Pattern matches [com.tdee.app.addfood.ParseConfirmViewModelTest].
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
