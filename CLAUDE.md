@@ -21,8 +21,9 @@ estimates/targets/projections.
 JDK 17 · Gradle 8.11.1 (wrapper) · AGP 8.9.1 · Kotlin 2.0.20 · KSP 2.0.20-1.0.25 · Compose BOM
 2024.09.00 · Room 2.6.1 · **compileSdk 36** / targetSdk **34** (build-tools 34.0.0 + **36.0.0**),
 minSdk **26** · `androidx.health.connect:connect-client` **1.1.0** · `androidx.work:work-runtime-ktx`
-2.9.1. Android SDK at `~/Android/Sdk` (`local.properties` sets `sdk.dir`). No system Gradle — use
-`./gradlew`. Pin versions in `gradle/libs.versions.toml`.
+2.9.1. `local.properties` (gitignored) sets `sdk.dir`; CI falls back to `ANDROID_HOME`. No system
+Gradle and no `gradlew.bat` — run `./gradlew` from **Git Bash** (needs `JAVA_HOME` = a JDK 17). Pin
+versions in `gradle/libs.versions.toml`.
 *(compileSdk was bumped 34→36 + AGP/Gradle bumped so connect-client 1.1.0 — which targets platform
 Health Connect — would work; the old alpha11 client was forced by compileSdk 34 and was incompatible.)*
 
@@ -42,76 +43,59 @@ Health Connect — would work; the old alpha11 client was forced by compileSdk 3
 - **Orchestration**: Sonnet for mechanical work, Opus for judgment-heavy/ambiguous work. Give each
   agent stop-and-report guardrails (no git/`--force`/`--no-verify`/schema or cross-module changes
   beyond its task). Verify (`./gradlew`, screenshots) and **commit per phase yourself** — agents leave
-  changes uncommitted. Before launching an agent task, check rate limits via the `session-status`
-  skill; if ≥90%, cron-wait until reset + 2 min.
+  changes uncommitted.
 - `.gitignore` excludes `build/`, `.gradle/`, `.kotlin/`, `local.properties` — never commit build
   artifacts; check `git status` before `git add`.
 
-## Emulator (VERIFIED working — this took real fighting; read before touching it)
-KVM at `/dev/kvm`, only phone system image is `system-images;android-34;google_apis_playstore;x86_64`.
-Use the SDK adb: `~/Android/Sdk/platform-tools/adb`.
+## Devices: emulator + phone (Windows host, one adb)
+Native Windows: a single Windows adb server (`adb` from SDK `platform-tools`, on PATH) sees the
+emulator, the USB phone and the Wi-Fi watch — always pass `-s <serial>`. Machine-specific serials
+and paths live in `CLAUDE.local.md` (gitignored).
 
-**Use the dedicated AVD `tdee_phone`** (created for this project; boots authorized in ~24s, confirmed
-with a screenshot). Do NOT use `Phone_API34` — it's a Play Store image whose existing userdata never
-trusted our adb key (stuck `unauthorized` headlessly), and I accidentally damaged it (see footguns).
-If `tdee_phone` is ever gone, recreate it:
+**AVD: `dev_phone`** (API 36, Google Play, phone; shared with the AudiobookWearOS project, which also
+uses `dev_watch`). Manage AVDs in Android Studio's Device Manager — `cmdline-tools`/`avdmanager`
+are not installed. List: `emulator -list-avds` (`emulator.exe` is in SDK `emulator/`, not on PATH).
+Launch headless from Git Bash as a **background** command (foreground `sleep` is blocked):
 ```
-export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java)))) ANDROID_SDK_ROOT=$HOME/Android/Sdk
-echo no | ~/Android/Sdk/cmdline-tools/latest/bin/avdmanager create avd \
-  -n tdee_phone -k "system-images;android-34;google_apis_playstore;x86_64" --device pixel_6 --force
+"$LOCALAPPDATA/Android/Sdk/emulator/emulator.exe" -avd dev_phone -no-window -no-audio -no-boot-anim
 ```
+Ready when `adb devices` shows `emulator-5554  device` AND `adb -s emulator-5554 shell getprop
+sys.boot_completed` == `1` — poll both in a background `until`-loop (or Monitor) that also reports
+process death/timeout. Stop with `adb -s emulator-5554 emu kill`.
 
-**Launch headless:**
-```
-export ANDROID_SDK_ROOT=$HOME/Android/Sdk ANDROID_HOME=$HOME/Android/Sdk
-~/Android/Sdk/platform-tools/adb start-server          # BEFORE launch, never restart mid-boot
-nohup ~/Android/Sdk/emulator/emulator -avd tdee_phone \
-  -no-window -no-audio -no-boot-anim -no-metrics -gpu swiftshader_indirect -no-snapshot \
-  >/tmp/emulator.log 2>&1 &
-```
-Wait for readiness by polling BOTH `adb devices` == `emulator-5554  device` (authorized) AND
-`adb shell getprop sys.boot_completed` == `1`. Do this in a **background** Bash `until`-loop (foreground
-`sleep` is blocked); have it also report process death + timeout, not just success.
+**Footguns (hard-won):**
+- **Git Bash mangles device paths:** `adb shell ls /sdcard/x` becomes `C:/Program Files/Git/sdcard/x`.
+  Quote the whole remote command (`adb shell 'ls /sdcard/x'`, same for `exec-out`) or prefix
+  `MSYS_NO_PATHCONV=1` (needed for `adb pull/push /sdcard/...`).
+- **PowerShell 5.1 corrupts binary redirects** — never `adb exec-out screencap -p > shot.png` in
+  PowerShell; do it in Git Bash, or `screencap` to `/sdcard` then `adb pull`.
+- **Never overwrite `%USERPROFILE%\.android\adbkey`** — the phone and watch trust it. A fresh AVD gets
+  its `.pub` injected at first boot, so it should come up authorized with no dialog (proven under
+  WSL; same emulator mechanism on Windows); an existing AVD stuck
+  `unauthorized` can't be fixed headlessly (Play images can't be rooted) — recreate it instead.
+- **Never `adb kill-server`** while an emulator is booting (leaves it `unauthorized`); it also drops
+  the phone/watch connections.
+- **Never delete an AVD's `modem_simulator/` dir** — Android then hangs at modem init and never boots.
+- One emulator instance per AVD (lock conflict).
 
-**Why a fresh AVD is the fix for headless auth:** there's no "Allow USB debugging" dialog to tap.
-On a brand-new AVD the emulator injects `~/.android/adbkey.pub` into the guest at the image level
-before boot, so it comes up already `device` (authorized) — even for a Play Store image. An *existing*
-unauthorized AVD can't be fixed headlessly (Play Store images can't be rooted to write `adb_keys`).
-
-**Footguns that cost me an hour (do not repeat):**
-- **`pkill -f "qemu-system"` kills your own shell** — the script text contains that string, so `-f`
-  matches the running bash. Use name-match `pgrep qemu` / `pkill qemu` (no `-f`), or kill by pid.
-- **Never `adb kill-server` while an emulator is booting** — leaves it stuck `unauthorized`.
-- **Never `rm -rf` an AVD's `modem_simulator/` dir** — the emulator then hangs at modem init (qemu
-  stays alive, but Android never finishes booting, so adb never sees the device). This is how I broke
-  `Phone_API34`.
-- One instance per AVD (else lock conflict).
-
-**Drive it (mirrors `~/AudiobookWearOS/EmulatorReadme.md`):**
+**Drive it** (Git Bash; `S=emulator-5554` or the phone serial):
 ```
-ADB="$HOME/Android/Sdk/platform-tools/adb"
-$ADB -s emulator-5554 install -r app/build/outputs/apk/debug/app-debug.apk
-$ADB -s emulator-5554 shell am start -n com.tdee.app/.MainActivity
-$ADB -s emulator-5554 exec-out screencap -p > /tmp/shot.png   # then Read the PNG to inspect
-$ADB -s emulator-5554 shell input tap X Y                     # interact
-$ADB -s emulator-5554 shell uiautomator dump                  # find element bounds
+adb -s $S install -r app/build/outputs/apk/debug/app-debug.apk
+adb -s $S shell am start -n com.tdee.app/.MainActivity
+adb -s $S exec-out screencap -p > "$TEMP/shot.png"     # then Read the PNG
+adb -s $S shell 'uiautomator dump /sdcard/ui.xml' && adb -s $S exec-out 'cat /sdcard/ui.xml'
+adb -s $S shell input tap X Y
 ```
-**Tap coordinates:** get them from `uiautomator dump` (true device pixels, e.g. 1080×2400) — do
-NOT eyeball the screenshot the Read tool shows (it's scaled, and guessing/­multiplying misses
-targets). Parse `bounds="[x1,y1][x2,y2]"`, tap the center. Compose chips/buttons appear as text
-nodes; the submit button may be below the fold — `input swipe` to scroll, then re-dump.
+**Tap coordinates:** take them from `uiautomator dump` (true device pixels) — do NOT eyeball the
+screenshot the Read tool shows (it's scaled). Parse `bounds="[x1,y1][x2,y2]"`, tap the center.
+Compose chips/buttons appear as text nodes; the submit button may be below the fold — `input swipe`
+to scroll, then re-dump. Image tooling: ImageMagick is `magick` (Windows' `convert.exe` is unrelated).
 Use the emulator for visual sign-off of UI work (agents build + run logic tests; orchestrator
 installs, launches, screenshots, and confirms rendering before committing).
 
-**Physical device (for Health Connect / Withings testing):** WSL2 Linux adb CANNOT see USB devices.
-The phone is reached only through the **Windows adb binary** (path is machine-specific — see
-`CLAUDE.local.md`, gitignored, not in PATH — use the full path). So there are TWO adb worlds:
-**emulator via WSL adb `~/Android/Sdk/platform-tools/adb`**, **phone via the Windows `adb.exe -s
-<serial>`** (serial also in `CLAUDE.local.md`). (`adb.exe` also lists the emulator but as
-`unauthorized` — ignore it; use WSL adb for the emulator.) The `~/AudiobookWearOS` project's
-`CLAUDE.md` documents this same WSL/Windows-adb quirk. Historical note: an older Pixel 3 (Android 12)
-test phone used the legacy standalone HC app, which `connect-client 1.1.0` couldn't drive — the
-current test phone (see `CLAUDE.local.md`) is Android 14+ and uses platform HC like the emulator.
+**Physical phone** (Health Connect / Withings testing) is Android 14+ with platform Health Connect,
+same as the emulator. (An older Android 12 phone used the legacy standalone HC app, which
+`connect-client 1.1.0` can't drive.)
 
 ## Status
 Done, committed, tested (263 unit tests green): spec → scaffold → math engine (`:domain`) → Room data
@@ -126,7 +110,7 @@ bars, window selector averaging complete days only) → **Help/FAQ** screen → 
 dates — Module 10 manual pre-seed) → **Check-in** (Module 8: active `TargetPeriod`, on-demand +
 weekly-due, manual target edits apply immediately) → **Health Connect** (Module 3 + weight-history
 pre-seed): permission flow, Connect-in-Settings, foreground + WorkManager sync → **Export** (Module 7:
-per-day CSV dump → Settings share-sheet via FileProvider). All verified on the `tdee_phone` emulator
+per-day CSV dump → Settings share-sheet via FileProvider). All verified on the emulator
 in light & dark.
 
 **Charts are Compose Canvas, not Vico** (full design fidelity, no dep). Geometry/look reference:
