@@ -12,13 +12,14 @@ enum class LlmProvider(
     val models: List<String>,
     val defaultModel: String,
 ) {
-    // The "-latest" aliases track whatever Flash/Pro model Google currently serves. Pinned 2.5
-    // names still resolve, but the free tier answers them with 503 "high demand" on every call,
-    // and the alias does not have that problem.
+    // Free-tier capacity moves between models. On 2026-11-21 "gemini-flash-latest" answered 503
+    // "high demand" or hung past 60 s on every call, and "gemini-pro-latest" had a free-tier quota
+    // of 0. The pinned models below answered in 1-6 s. Re-check with the models list endpoint if
+    // parsing starts to fail with "high demand" again.
     GEMINI(
         displayName = "Google Gemini",
-        models = listOf("gemini-flash-latest", "gemini-flash-lite-latest", "gemini-pro-latest"),
-        defaultModel = "gemini-flash-latest",
+        models = listOf("gemini-2.5-flash", "gemini-3.5-flash-lite", "gemini-3.5-flash"),
+        defaultModel = "gemini-2.5-flash",
     ),
     OPENAI(
         displayName = "OpenAI",
@@ -30,4 +31,11 @@ enum class LlmProvider(
         models = listOf("claude-haiku-4-5", "claude-sonnet-4-6"),
         defaultModel = "claude-haiku-4-5",
     ),
+    ;
+
+    /**
+     * The model to call, given the [stored] choice. A stored name that is no longer a preset (one we
+     * removed because it stopped working) gives [defaultModel], so an old choice can't keep failing.
+     */
+    fun resolveModel(stored: String?): String = stored?.takeIf { it in models } ?: defaultModel
 }

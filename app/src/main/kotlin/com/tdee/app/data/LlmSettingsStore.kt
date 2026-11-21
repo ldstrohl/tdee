@@ -51,7 +51,7 @@ class LlmSettingsStore(context: Context) : LlmSettings {
             ?: LlmProvider.GEMINI
 
     override fun modelFor(p: LlmProvider): String =
-        prefs.getString(modelKey(p), null)?.takeIf { it.isNotBlank() } ?: p.defaultModel
+        p.resolveModel(prefs.getString(modelKey(p), null))
 
     override fun keyFor(p: LlmProvider): String? =
         prefs.getString(apiKeyKey(p), null)?.takeIf { it.isNotBlank() }
