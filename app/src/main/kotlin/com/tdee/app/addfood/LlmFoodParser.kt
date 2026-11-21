@@ -46,8 +46,16 @@ class LlmFoodParser(
                 "Add an API key in Settings to use meal parsing.",
             )
         }
-        val model = settings.modelFor(provider)
-        return adapters.getValue(provider).parse(text, model, key, imageJpeg)
+        // Free-tier capacity moves between models: one answers 5xx "high demand" while another
+        // answers at once. After the chosen model fails that way, try the other presets in order.
+        val chosen = settings.modelFor(provider)
+        val adapter = adapters.getValue(provider)
+        var result = adapter.parse(text, chosen, key, imageJpeg)
+        for (model in provider.models - chosen) {
+            if ((result as? ParseResult.Failure)?.kind != ParseErrorKind.SERVER) break
+            result = adapter.parse(text, model, key, imageJpeg)
+        }
+        return result
     }
 }
 

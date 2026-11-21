@@ -265,6 +265,50 @@ class LlmFoodParserTest {
         assertEggsAndOatmeal(result)
     }
 
+    private val highDemand =
+        MockResponse().setResponseCode(503).setBody("""{"error":{"message":"high demand"}}""")
+
+    @Test
+    fun `a 503 on the chosen model falls back to the next preset`() {
+        val envelope = """{"candidates":[{"content":{"parts":[{"text":${quotedItems()}}]}}]}"""
+        repeat(MAX_ATTEMPTS) { server.enqueue(highDemand) }
+        server.enqueue(MockResponse().setBody(envelope).setResponseCode(200))
+
+        val parser = LlmFoodParser(
+            fakeSettings(LlmProvider.GEMINI, key = "KEY"), client, geminiBaseUrl = server.url("/").toString(),
+        )
+        assertEggsAndOatmeal(runBlocking { parser.parse("eggs and oatmeal") })
+
+        val models = LlmProvider.GEMINI.models
+        val paths = (0..MAX_ATTEMPTS).map { server.takeRequest().path!! }
+        paths.take(MAX_ATTEMPTS).forEach { assertTrue(it, it.contains("/${models[0]}:")) }
+        assertTrue(paths.last(), paths.last().contains("/${models[1]}:"))
+    }
+
+    @Test
+    fun `a 503 on every preset reports the server error`() {
+        repeat(MAX_ATTEMPTS * LlmProvider.GEMINI.models.size) { server.enqueue(highDemand) }
+
+        val parser = LlmFoodParser(
+            fakeSettings(LlmProvider.GEMINI, key = "KEY"), client, geminiBaseUrl = server.url("/").toString(),
+        )
+        val result = runBlocking { parser.parse("eggs") }
+        assertEquals(ParseResult.Failure(ParseErrorKind.SERVER, "high demand"), result)
+        assertEquals(MAX_ATTEMPTS * LlmProvider.GEMINI.models.size, server.requestCount)
+    }
+
+    @Test
+    fun `an auth error does not try other models`() {
+        server.enqueue(MockResponse().setResponseCode(401))
+
+        val parser = LlmFoodParser(
+            fakeSettings(LlmProvider.GEMINI, key = "KEY"), client, geminiBaseUrl = server.url("/").toString(),
+        )
+        val result = runBlocking { parser.parse("eggs") }
+        assertEquals(ParseErrorKind.AUTH, (result as ParseResult.Failure).kind)
+        assertEquals(1, server.requestCount)
+    }
+
     private fun fakeSettings(p: LlmProvider, key: String?) = object : LlmSettings {
         override val provider = p
         override fun modelFor(provider: LlmProvider) = provider.defaultModel
